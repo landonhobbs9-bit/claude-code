@@ -22,12 +22,16 @@ python3 -m http.server 8000
 **Mobile / touch**
 - Drag the **left half** of the screen to move (a virtual joystick appears).
 - Tap the red **⚔ rune** (bottom-right) to attack.
+- Tap the purple **skill runes** (arc above the attack rune) to use warrior moves.
 - Tap the blue **✚ flask** to drink a healing potion.
+- Tap the **🎒 bag** (top-right) to open the Character screen.
 
 **Desktop**
 - **WASD** / arrow keys to move.
 - **Space** or **click** to attack (auto-aims at the nearest enemy or your cursor).
+- **1–4** to use unlocked warrior skills.
 - **Q** to drink a potion.
+- **C** (or I / B) to open the Character screen, **Esc** to close.
 
 ## Gameplay
 
@@ -38,6 +42,39 @@ python3 -m http.server 8000
 - Collect **gold**, crack open **chests**, and grab **potions**.
 - Gain **XP** and **level up** — more max HP, full heal, and stronger attacks.
 - Enemies scale with depth. See how far down you can go before you die.
+
+## Loot & gear
+
+- Enemies, chests, and bosses drop **randomized gear** that glows by rarity:
+  **Common** → **Magic** → **Rare** → **Epic** → **Legendary**. Better rarities
+  drop more often as you descend.
+- Each item rolls a base stat for its slot plus random **affixes** (more affixes
+  at higher rarity): Damage, Max HP, Armor, Crit, Attack/Move Speed, Life on Hit,
+  and XP Gain.
+- There are **7 equipment slots**: weapon, helmet, chest, gloves, boots, ring,
+  amulet. Equipped stats are aggregated into your character (armor reduces damage
+  taken, attack speed lowers your swing cooldown, etc.).
+- Picked-up gear goes into a **limited bag** (24 slots). If the bag is full, loot
+  stays on the ground until you make room.
+
+### Character screen
+
+Open it with the 🎒 button (or `C`). From here you can:
+- See all your **derived stats**.
+- Inspect any **equipped** item and **Unequip** it.
+- Inspect any **bag** item, compare it against what's equipped, then **Equip** or
+  **Discard** it. Equipping swaps the old item back into your bag.
+
+## Warrior moves
+
+As you level, you learn new Diablo/PoE-style abilities (each on a cooldown):
+
+| Level | Move | Effect |
+|------:|------|--------|
+| 3 | 🌀 **Whirlwind** | Spin, striking every enemy around you |
+| 5 | 💨 **Charge** | Dash forward, smashing and knocking back enemies |
+| 7 | 💥 **Ground Slam** | Shockwave: AoE damage + heavy knockback |
+| 9 | 📣 **War Cry** | +60% damage for 6s and an instant partial heal |
 
 ## Tech notes
 
