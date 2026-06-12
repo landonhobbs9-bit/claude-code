@@ -173,6 +173,68 @@
 
   let balls, particles, shake, running, winner, lastTime;
 
+  // ------------------------------------------------------------------ sound
+
+  let audio = null; // created on first FIGHT click (browsers block audio before a gesture)
+
+  function initAudio() {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+  }
+
+  function tone(freq, endFreq, dur, type, vol) {
+    if (!audio) return;
+    const t = audio.currentTime;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), t + dur);
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  function noise(dur, vol, filterFreq, filterType) {
+    if (!audio) return;
+    const t = audio.currentTime;
+    const len = Math.ceil(audio.sampleRate * dur);
+    const buf = audio.createBuffer(1, len, audio.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    const filt = audio.createBiquadFilter();
+    filt.type = filterType;
+    filt.frequency.value = filterFreq;
+    const gain = audio.createGain();
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(filt).connect(gain).connect(audio.destination);
+    src.start(t);
+  }
+
+  const sfx = {
+    wall(speed) { // thump, louder and brighter the faster the impact
+      const v = Math.min(0.3, 0.08 + speed / 3000);
+      tone(140 + speed * 0.12, 55, 0.1, 'triangle', v);
+    },
+    clash() { // metallic clank when the balls slam into each other
+      noise(0.12, 0.28, 1800, 'bandpass');
+      tone(340, 90, 0.18, 'square', 0.1);
+    },
+    sword() { // quick high "shing"
+      noise(0.14, 0.22, 5000, 'highpass');
+      tone(1200, 2200, 0.08, 'sine', 0.08);
+    },
+    hammer() { // heavy low boom
+      tone(110, 35, 0.3, 'sine', 0.45);
+      noise(0.12, 0.25, 600, 'lowpass');
+    },
+  };
+
   // ---------------------------------------------------------------- fighters
 
   function makeBalls() {
@@ -240,7 +302,10 @@
       if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
       if (b.y - b.r < 0)  { b.y = b.r;     b.vy =  Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
       if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
-      if (hitWall) b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
+      if (hitWall) {
+        b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
+        sfx.wall(Math.hypot(b.vx, b.vy));
+      }
 
       // ease speed back toward cruise speed after knockbacks
       const sp = Math.hypot(b.vx, b.vy) || 1;
@@ -304,6 +369,7 @@
     a.cruise = Math.max(MIN_CRUISE, a.cruise - BALL_SLOWDOWN);
     b.cruise = Math.max(MIN_CRUISE, b.cruise - BALL_SLOWDOWN);
 
+    sfx.clash();
     spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, '#cfd6ff', 5, 120);
   }
 
@@ -340,6 +406,7 @@
     def.vx += (kx / kd) * att.knock;
     def.vy += (ky / kd) * att.knock;
 
+    if (att.weapon === 'hammer') sfx.hammer(); else sfx.sword();
     spawnSparks(px, py, att.weapon === 'hammer' ? '#ffb347' : '#fff27a',
                 att.weapon === 'hammer' ? 16 : 10,
                 att.weapon === 'hammer' ? 320 : 220);
@@ -531,6 +598,7 @@
   }
 
   playBtn.addEventListener('click', () => {
+    initAudio();
     reset();
     overlay.classList.add('hidden');
     running = true;
