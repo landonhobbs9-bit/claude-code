@@ -778,7 +778,7 @@
       grabCd: 0,
       empowerT: 0,
       slamArmed: 0,     // wall-slam damage window after being thrown
-      slamDmg: 0,
+      slamMult: 1,      // empowered throws multiply the impact damage
       slamBy: null,
       hitFlash: 0,
       cooldown: 0,
@@ -838,23 +838,27 @@
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      // bounce off walls — each bounce makes the ball cruise a bit faster
-      let hitWall = false;
-      if (b.x - b.r < 0)  { b.x = b.r;     b.vx =  Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
-      if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
-      if (b.y - b.r < 0)  { b.y = b.r;     b.vy =  Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
-      if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
+      // bounce off walls — each bounce makes the ball cruise a bit faster.
+      // `impact` is the speed component INTO the wall, used for slam damage.
+      let hitWall = false, impact = 0;
+      if (b.x - b.r < 0)  { b.x = b.r;     impact = Math.abs(b.vx); b.vx =  Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
+      if (b.x + b.r > W)  { b.x = W - b.r; impact = Math.abs(b.vx); b.vx = -Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
+      if (b.y - b.r < 0)  { b.y = b.r;     impact = Math.max(impact, Math.abs(b.vy)); b.vy =  Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
+      if (b.y + b.r > H)  { b.y = H - b.r; impact = Math.max(impact, Math.abs(b.vy)); b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
       if (hitWall) {
         b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
         if (b.slamArmed > 0) {
-          // thrown by Kurt: the wall is the weapon
-          b.hp = Math.max(0, b.hp - b.slamDmg);
+          // thrown by Kurt: the wall is the weapon — damage scales with how
+          // hard the impact is (head-on at full throw speed hurts the most,
+          // glancing or long decayed flights hurt less)
+          const dmg = Math.max(6, Math.min(24, Math.round(impact / 55 * b.slamMult)));
+          b.hp = Math.max(0, b.hp - dmg);
           b.hitFlash = 0.3;
-          spawnSparks(b.x, b.y, '#c08cff', 20, 360);
-          spawnDamageText(b.x, b.y - b.r - 8, '-' + b.slamDmg,
+          spawnSparks(b.x, b.y, '#c08cff', 8 + dmg, 200 + dmg * 12);
+          spawnDamageText(b.x, b.y - b.r - 8, '-' + dmg,
                           b.slamBy ? b.slamBy.color : '#c08cff');
           sfx.slam();
-          shake = 13;
+          shake = 7 + dmg * 0.5;
           b.slamArmed = 0;
           updateHud();
         } else {
@@ -895,7 +899,7 @@
         g.foe.vx = dx * power;
         g.foe.vy = dy * power;
         g.foe.slamArmed = 1.2;
-        g.foe.slamDmg = g.empowered ? 16 : 12;
+        g.foe.slamMult = g.empowered ? 1.25 : 1;
         g.foe.slamBy = b;
         g.foe.grabbedBy = null;
         b.grab = null;
