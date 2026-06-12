@@ -73,6 +73,30 @@
     gap: 10px;
   }
   .fighter.right .stats { justify-content: flex-end; }
+  .specials { display: flex; gap: 6px; margin-top: 5px; }
+  .sp { flex: 1; }
+  .sp .label {
+    font-size: 9px;
+    color: #9aa0b5;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .sp .meter {
+    height: 6px;
+    background: #2a2d3e;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .sp .mfill { height: 100%; width: 0%; border-radius: 3px; }
+  .fighter.left .sp .mfill { background: var(--blue); }
+  .fighter.right .sp .mfill { background: var(--red); }
+  .fighter .sp.ready .mfill {
+    background: linear-gradient(90deg, #ffd75e, #ffaa2b);
+    box-shadow: 0 0 6px #ffd75e;
+  }
+  .fighter .sp.ready .label { color: #ffd75e; }
   #vs {
     font-size: 22px;
     font-weight: bold;
@@ -131,12 +155,14 @@
     <div class="name"><span style="color:var(--blue)">&#9876; SWORDBALL</span><span id="hp1-text">100 / 100</span></div>
     <div class="hpbar"><div class="fill" id="hp1"></div></div>
     <div class="stats"><span>DMG 8</span><span>SPIN fast</span><span>REACH long</span></div>
+    <div class="specials" id="sp-left"></div>
   </div>
   <div id="vs">VS</div>
   <div class="fighter right">
     <div class="name"><span style="color:var(--red)">&#128296; HAMMERBALL</span><span id="hp2-text">100 / 100</span></div>
     <div class="hpbar"><div class="fill" id="hp2"></div></div>
     <div class="stats"><span>DMG 14</span><span>SPIN slow</span><span>KNOCKBACK heavy</span></div>
+    <div class="specials" id="sp-right"></div>
   </div>
 </div>
 
@@ -172,6 +198,7 @@
   const MIN_CRUISE = 110;      // speed floor so they never stall out
 
   let balls, particles, shake, running, winner, lastTime;
+  let projectiles, shockwaves, ghosts, announce;
 
   // ------------------------------------------------------------------ sound
 
@@ -233,7 +260,206 @@
       tone(110, 35, 0.3, 'sine', 0.45);
       noise(0.12, 0.25, 600, 'lowpass');
     },
+    cast() { // rising power-up sweep when a special fires
+      tone(280, 950, 0.28, 'sawtooth', 0.1);
+      tone(140, 500, 0.3, 'square', 0.07);
+    },
+    beam() { // crescent wave launch
+      noise(0.22, 0.18, 2500, 'bandpass');
+      tone(950, 320, 0.3, 'sawtooth', 0.09);
+    },
+    slam() { // seismic slam detonation
+      tone(75, 24, 0.5, 'sine', 0.55);
+      noise(0.35, 0.3, 380, 'lowpass');
+    },
+    whoosh() { // hammer hurled through the air
+      noise(0.3, 0.18, 1200, 'bandpass');
+    },
   };
+
+  // --------------------------------------------------------------- specials
+  // Each ball carries 3 weapon-themed specials. They charge over time, the AI
+  // casts them when full (and the enemy is in the right range band), then the
+  // meter empties and recharges — that recharge is the cooldown.
+
+  function specialDefs(weapon) {
+    return weapon === 'sword' ? [
+      { key: 'whirlwind', name: 'WHIRLWIND',     charge: 9,  range: [0, 260] },
+      { key: 'lunge',     name: 'BLADE RUSH',    charge: 7,  range: [240, 9999] },
+      { key: 'beam',      name: 'CRESCENT WAVE', charge: 12, range: [300, 9999] },
+    ] : [
+      { key: 'slam',  name: 'SEISMIC SLAM', charge: 10, range: [0, 210] },
+      { key: 'throw', name: 'HAMMER HURL',  charge: 12, range: [280, 9999] },
+      { key: 'rage',  name: 'TITAN RAGE',   charge: 9,  range: [0, 9999] },
+    ];
+  }
+
+  function castSpecial(b, foe, s) {
+    announce = { text: s.name + '!', color: b.color, t: 1.3, max: 1.3 };
+    sfx.cast();
+    const aim = Math.atan2(foe.y - b.y, foe.x - b.x);
+    switch (s.key) {
+      case 'whirlwind': // sword spins wildly, raking the enemy with rapid cuts
+        b.activeSpecial = { key: s.key, t: 1.8 };
+        break;
+      case 'lunge': // dash at the enemy, blade-first
+        b.vx = Math.cos(aim) * 760;
+        b.vy = Math.sin(aim) * 760;
+        b.activeSpecial = { key: s.key, t: 0.65 };
+        break;
+      case 'beam': // launch a flying crescent of sword energy
+        projectiles.push({
+          type: 'beam',
+          x: b.x + Math.cos(aim) * (b.r + 10), y: b.y + Math.sin(aim) * (b.r + 10),
+          vx: Math.cos(aim) * 470, vy: Math.sin(aim) * 470,
+          ang: aim, owner: b, dmg: 12, knock: 340, life: 2.5,
+        });
+        sfx.beam();
+        break;
+      case 'slam': // wind up, then blast an expanding shockwave
+        b.activeSpecial = { key: s.key, t: 1.1, dur: 1.1, windup: 0.55, fired: false };
+        break;
+      case 'throw': // hurl the hammer; it comes back boomerang-style
+        b.hammerOut = true;
+        projectiles.push({
+          type: 'hammer',
+          x: b.x, y: b.y,
+          vx: Math.cos(aim) * 430, vy: Math.sin(aim) * 430,
+          owner: b, dmg: 16, knock: 480, spin: 0, t: 0, phase: 'out',
+        });
+        sfx.whoosh();
+        break;
+      case 'rage': // hammer grows huge: bonus damage, reach and knockback
+        b.activeSpecial = { key: s.key, t: 3.0 };
+        break;
+    }
+  }
+
+  function updateSpecials(b, foe, dt) {
+    // charge meters
+    for (const s of b.specials) {
+      if (s.timer < s.charge) { s.timer += dt; continue; }
+      if (b.activeSpecial || b.hammerOut) continue;
+      const dist = Math.hypot(foe.x - b.x, foe.y - b.y);
+      // ready: fire when the enemy is in this move's range band (small random
+      // delay so the two balls don't cast in lockstep)
+      if (dist >= s.range[0] && dist <= s.range[1] && Math.random() < dt * 2.5) {
+        s.timer = 0;
+        castSpecial(b, foe, s);
+      }
+    }
+
+    // active special effects
+    const a = b.activeSpecial;
+    if (!a) return;
+    a.t -= dt;
+    if (a.key === 'lunge') {
+      b.wAngle = Math.atan2(foe.y - b.y, foe.x - b.x); // blade locked on target
+      ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
+                    r: b.r, wLen: b.wLen, color: b.color, body: true,
+                    life: 0.22, max: 0.22 });
+    }
+    if (a.key === 'whirlwind') {
+      ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
+                    r: b.r, wLen: b.wLen, color: b.color, body: false,
+                    life: 0.18, max: 0.18 });
+    }
+    if (a.key === 'slam' && !a.fired && a.dur - a.t >= a.windup) {
+      a.fired = true;
+      shockwaves.push({ x: b.x, y: b.y, r: b.r, max: 200, owner: b,
+                        dmg: 18, knock: 640, hit: false });
+      sfx.slam();
+      shake = 14;
+    }
+    if (a.key === 'rage' && Math.random() < dt * 18) {
+      // embers boiling off the enraged hammerball
+      particles.push({
+        x: b.x + (Math.random() - 0.5) * b.r * 2, y: b.y + b.r * 0.5,
+        vx: (Math.random() - 0.5) * 40, vy: -60 - Math.random() * 60,
+        life: 0.4, max: 0.4, size: 2 + Math.random() * 2.5,
+        color: '#ff7b3b', text: null,
+      });
+    }
+    if (a.t <= 0) b.activeSpecial = null;
+  }
+
+  // shared hit application for projectiles and shockwaves
+  function dealHit(def, dmg, fromX, fromY, knock, color, shakeAmt) {
+    def.hp = Math.max(0, def.hp - dmg);
+    def.cooldown = HIT_COOLDOWN;
+    def.hitFlash = 0.25;
+    let kx = def.x - fromX, ky = def.y - fromY;
+    const kd = Math.hypot(kx, ky) || 1;
+    def.vx += (kx / kd) * knock;
+    def.vy += (ky / kd) * knock;
+    spawnSparks(def.x - (kx / kd) * def.r, def.y - (ky / kd) * def.r, color, 14, 300);
+    spawnDamageText(def.x, def.y - def.r - 8, '-' + dmg, color);
+    shake = shakeAmt;
+    updateHud();
+  }
+
+  function updateProjectiles(dt) {
+    for (const p of projectiles) {
+      const foe = p.owner === balls[0] ? balls[1] : balls[0];
+      if (p.type === 'beam') {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.life -= dt;
+        if (Math.random() < dt * 40) {
+          particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.2, max: 0.2,
+                           size: 2.5, color: '#9fdcff', text: null });
+        }
+        if (foe.cooldown <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 16) {
+          dealHit(foe, p.dmg, p.x, p.y, p.knock, '#9fdcff', 7);
+          sfx.sword();
+          p.life = 0;
+        }
+        if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) p.life = 0;
+        p.dead = p.life <= 0;
+      } else if (p.type === 'hammer') {
+        p.t += dt;
+        p.spin += 14 * dt;
+        const target = p.phase === 'out' ? foe : p.owner;
+        // steer toward the target (gentle homing out, hard homing back)
+        const ax = target.x - p.x, ay = target.y - p.y;
+        const ad = Math.hypot(ax, ay) || 1;
+        const steer = p.phase === 'out' ? 600 : 1500;
+        p.vx += (ax / ad) * steer * dt;
+        p.vy += (ay / ad) * steer * dt;
+        const sp = Math.hypot(p.vx, p.vy) || 1;
+        const cap = 480;
+        if (sp > cap) { p.vx = p.vx / sp * cap; p.vy = p.vy / sp * cap; }
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        if (p.phase === 'out') {
+          if (foe.cooldown <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 18) {
+            dealHit(foe, p.dmg, p.x, p.y, p.knock, '#ffb347', 10);
+            sfx.hammer();
+            p.phase = 'back';
+          } else if (p.t > 0.9) {
+            p.phase = 'back';
+          }
+        } else if (Math.hypot(p.owner.x - p.x, p.owner.y - p.y) < p.owner.r) {
+          p.owner.hammerOut = false; // caught it
+          p.dead = true;
+        }
+      }
+    }
+    projectiles = projectiles.filter(p => !p.dead);
+
+    for (const s of shockwaves) {
+      s.r += 420 * dt;
+      const foe = s.owner === balls[0] ? balls[1] : balls[0];
+      if (!s.hit && foe.cooldown <= 0 &&
+          Math.hypot(foe.x - s.x, foe.y - s.y) < s.r + foe.r) {
+        s.hit = true;
+        dealHit(foe, s.dmg, s.x, s.y, s.knock, '#ffb347', 12);
+      }
+      s.dead = s.r >= s.max;
+    }
+    shockwaves = shockwaves.filter(s => !s.dead);
+
+    for (const g of ghosts) g.life -= dt;
+    ghosts = ghosts.filter(g => g.life > 0);
+  }
 
   // ---------------------------------------------------------------- fighters
 
@@ -255,8 +481,12 @@
         knock: 260,            // knockback impulse dealt to the victim
         hitFlash: 0,           // victim flash timer
         cooldown: 0,           // can't be damaged while > 0
+        specials: specialDefs('sword').map(s => ({ ...s, timer: 0 })),
+        activeSpecial: null,
+        hammerOut: false,
         hpEl: document.getElementById('hp1'),
         hpText: document.getElementById('hp1-text'),
+        spWrap: document.getElementById('sp-left'),
       },
       { // Hammerball: slow spin, shorter reach, heavy hits that smash you into walls
         name: 'HAMMERBALL',
@@ -274,8 +504,12 @@
         knock: 420,
         hitFlash: 0,
         cooldown: 0,
+        specials: specialDefs('hammer').map(s => ({ ...s, timer: 0 })),
+        activeSpecial: null,
+        hammerOut: false,
         hpEl: document.getElementById('hp2'),
         hpText: document.getElementById('hp2-text'),
+        spWrap: document.getElementById('sp-right'),
       },
     ];
   }
@@ -283,9 +517,25 @@
   function reset() {
     balls = makeBalls();
     particles = [];
+    projectiles = [];
+    shockwaves = [];
+    ghosts = [];
+    announce = null;
     shake = 0;
     winner = null;
+    for (const b of balls) {
+      b.spWrap.innerHTML = '';
+      b.spEls = b.specials.map(s => {
+        const div = document.createElement('div');
+        div.className = 'sp';
+        div.innerHTML = '<div class="label">' + s.name +
+                        '</div><div class="meter"><div class="mfill"></div></div>';
+        b.spWrap.appendChild(div);
+        return { root: div, fill: div.querySelector('.mfill') };
+      });
+    }
     updateHud();
+    updateSpecialHud();
   }
 
   // ------------------------------------------------------------------ update
@@ -314,15 +564,27 @@
       b.vy = b.vy / sp * target;
 
       // the weapon is the only thing that animates on the ball: spin it
-      b.wAngle += b.wSpin * dt;
+      // (whirlwind sends the sword into overdrive)
+      const spinMult = b.activeSpecial && b.activeSpecial.key === 'whirlwind' ? 4.5 : 1;
+      b.wAngle += b.wSpin * spinMult * dt;
 
       b.cooldown = Math.max(0, b.cooldown - dt);
       b.hitFlash = Math.max(0, b.hitFlash - dt);
     }
 
+    updateSpecials(balls[0], balls[1], dt);
+    updateSpecials(balls[1], balls[0], dt);
+    updateSpecialHud();
+
     bodyCollision(balls[0], balls[1]);
     weaponHit(balls[0], balls[1]);
     weaponHit(balls[1], balls[0]);
+    updateProjectiles(dt);
+
+    if (announce) {
+      announce.t -= dt;
+      if (announce.t <= 0) announce = null;
+    }
 
     // particles
     for (const p of particles) {
@@ -376,13 +638,22 @@
   // weapon of `att` hitting the body of `def`
   function weaponHit(att, def) {
     if (def.cooldown > 0) return;
+    if (att.hammerOut) return; // hammer is mid-flight, nothing to swing
+
+    // specials modify the strike
+    const spec = att.activeSpecial ? att.activeSpecial.key : null;
+    let dmg = att.dmg, knock = att.knock, victimCd = HIT_COOLDOWN;
+    let reach = att.wLen;
+    if (spec === 'whirlwind') { dmg = 4; victimCd = 0.3; }          // rapid weak cuts
+    if (spec === 'lunge')     { dmg = 15; knock = 540; }            // skewering dash
+    if (spec === 'rage')      { dmg = att.dmg + 6; knock = att.knock + 220; reach = att.wLen * 1.25; }
 
     // weapon is a segment from the ball edge out to the tip
     const cos = Math.cos(att.wAngle), sin = Math.sin(att.wAngle);
     const x1 = att.x + cos * att.r;
     const y1 = att.y + sin * att.r;
-    const x2 = att.x + cos * (att.r + att.wLen);
-    const y2 = att.y + sin * (att.r + att.wLen);
+    const x2 = att.x + cos * (att.r + reach);
+    const y2 = att.y + sin * (att.r + reach);
 
     // closest point on segment to defender center
     const ex = x2 - x1, ey = y2 - y1;
@@ -392,26 +663,26 @@
     const px = x1 + ex * t, py = y1 + ey * t;
     const dist = Math.hypot(def.x - px, def.y - py);
 
-    const blade = att.weapon === 'hammer' ? 14 : 6; // weapon thickness
+    const blade = (att.weapon === 'hammer' ? 14 : 6) * (spec === 'rage' ? 1.5 : 1);
     if (dist > def.r + blade) return;
 
     // --- HIT! ---
-    def.hp = Math.max(0, def.hp - att.dmg);
-    def.cooldown = HIT_COOLDOWN;
+    def.hp = Math.max(0, def.hp - dmg);
+    def.cooldown = victimCd;
     def.hitFlash = 0.25;
 
     // knockback: shove the defender away — can bounce them into walls
     let kx = def.x - px, ky = def.y - py;
     const kd = Math.hypot(kx, ky) || 1;
-    def.vx += (kx / kd) * att.knock;
-    def.vy += (ky / kd) * att.knock;
+    def.vx += (kx / kd) * knock;
+    def.vy += (ky / kd) * knock;
 
     if (att.weapon === 'hammer') sfx.hammer(); else sfx.sword();
     spawnSparks(px, py, att.weapon === 'hammer' ? '#ffb347' : '#fff27a',
                 att.weapon === 'hammer' ? 16 : 10,
                 att.weapon === 'hammer' ? 320 : 220);
-    spawnDamageText(def.x, def.y - def.r - 8, '-' + att.dmg, att.color);
-    shake = att.weapon === 'hammer' ? 9 : 5;
+    spawnDamageText(def.x, def.y - def.r - 8, '-' + dmg, att.color);
+    shake = spec ? 11 : (att.weapon === 'hammer' ? 9 : 5);
     updateHud();
   }
 
@@ -453,7 +724,81 @@
     ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
     ctx.stroke();
 
+    // afterimage ghosts trail behind dashes and whirlwinds
+    for (const g of ghosts) {
+      ctx.save();
+      ctx.globalAlpha = 0.3 * (g.life / g.max);
+      if (g.body) {
+        ctx.fillStyle = g.color;
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.translate(g.x, g.y);
+      ctx.rotate(g.wAngle);
+      if (g.weapon === 'sword') drawSword(g); else drawHammer(g);
+      ctx.restore();
+    }
+
+    // expanding seismic slam rings
+    for (const s of shockwaves) {
+      const fade = 1 - s.r / s.max;
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.strokeStyle = '#ffb347';
+      ctx.shadowColor = '#ffb347';
+      ctx.shadowBlur = 20;
+      ctx.lineWidth = 10 * fade + 2;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#fff3d6';
+      ctx.lineWidth = 3 * fade + 1;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r * 0.82, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     for (const b of balls) drawBall(b);
+
+    for (const p of projectiles) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (p.type === 'beam') {
+        // glowing crescent of sword energy
+        ctx.rotate(Math.atan2(p.vy, p.vx));
+        ctx.strokeStyle = '#9fdcff';
+        ctx.shadowColor = '#4da6ff';
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(-8, 0, 17, -1.15, 1.15);
+        ctx.stroke();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(-8, 0, 17, -0.8, 0.8);
+        ctx.stroke();
+      } else { // spinning thrown hammer
+        ctx.rotate(p.spin);
+        ctx.shadowColor = '#ffb347';
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = '#8a5a2b';
+        ctx.fillRect(-28, -4, 40, 8);
+        const g = ctx.createLinearGradient(12, -16, 36, 16);
+        g.addColorStop(0, '#b9c2cf');
+        g.addColorStop(1, '#6e7886');
+        ctx.fillStyle = g;
+        roundRect(12, -16, 24, 32, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#4a5260';
+        ctx.lineWidth = 2;
+        roundRect(12, -16, 24, 32, 5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     for (const p of particles) {
       const a = Math.max(0, p.life / p.max);
@@ -472,17 +817,60 @@
     }
     ctx.globalAlpha = 1;
     ctx.restore();
+
+    // special move announcement banner (drawn unshaken, on top of everything)
+    if (announce) {
+      const fade = Math.min(1, announce.t / 0.35);
+      const pop = 1 + Math.max(0, (announce.t - (announce.max - 0.15)) / 0.15) * 0.6;
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(W / 2, 64);
+      ctx.scale(pop, pop);
+      ctx.font = 'bold 34px Segoe UI, Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = announce.color;
+      ctx.shadowColor = announce.color;
+      ctx.shadowBlur = 18;
+      ctx.fillText(announce.text, 0, 0);
+      ctx.restore();
+    }
   }
 
   function drawBall(b) {
-    // weapon first so it sits "behind" the ball at the hilt
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(b.wAngle);
-    if (b.weapon === 'sword') drawSword(b); else drawHammer(b);
-    ctx.restore();
+    const spec = b.activeSpecial ? b.activeSpecial.key : null;
 
-    // body
+    // seismic slam windup: pulsing ring warns the hit is coming
+    if (spec === 'slam' && !b.activeSpecial.fired) {
+      const p = (b.activeSpecial.dur - b.activeSpecial.t) / b.activeSpecial.windup;
+      ctx.save();
+      ctx.globalAlpha = 0.5 + 0.4 * Math.sin(p * 25);
+      ctx.strokeStyle = '#ffb347';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r + 14 - p * 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // weapon first so it sits "behind" the ball at the hilt
+    if (!b.hammerOut) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.wAngle);
+      if (spec === 'rage') {
+        ctx.shadowColor = '#ff3b3b';
+        ctx.shadowBlur = 18;
+      }
+      if (b.weapon === 'sword') drawSword(b);
+      else drawHammer(b, spec === 'rage' ? 1.45 : 1);
+      ctx.restore();
+    }
+
+    // body (glows while a special is active)
+    if (spec) {
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = 25;
+    }
     const flash = b.hitFlash > 0;
     const grad = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.2, b.x, b.y, b.r);
     grad.addColorStop(0, flash ? '#ffffff' : b.color);
@@ -494,6 +882,7 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 2;
     ctx.stroke();
+    ctx.shadowBlur = 0;
 
     // angry little eyes facing the enemy
     const foe = balls[0] === b ? balls[1] : balls[0];
@@ -547,8 +936,9 @@
     ctx.stroke();
   }
 
-  function drawHammer(b) {
-    const r = b.r, L = b.wLen;
+  // s > 1 draws the enlarged Titan Rage version (longer handle, bigger head)
+  function drawHammer(b, s = 1) {
+    const r = b.r, L = b.wLen * (s > 1 ? 1.25 : 1);
     // handle
     ctx.fillStyle = '#8a5a2b';
     ctx.fillRect(r - 6, -4, L - 8, 8);
@@ -556,15 +946,15 @@
     ctx.lineWidth = 1;
     ctx.strokeRect(r - 6, -4, L - 8, 8);
     // head
-    const g = ctx.createLinearGradient(r + L - 16, -18, r + L + 12, 18);
-    g.addColorStop(0, '#b9c2cf');
-    g.addColorStop(1, '#6e7886');
+    const g = ctx.createLinearGradient(r + L - 16 * s, -18 * s, r + L + 12 * s, 18 * s);
+    g.addColorStop(0, s > 1 ? '#e0a3a3' : '#b9c2cf');
+    g.addColorStop(1, s > 1 ? '#8a4a4a' : '#6e7886');
     ctx.fillStyle = g;
-    roundRect(r + L - 16, -18, 28, 36, 5);
+    roundRect(r + L - 16 * s, -18 * s, 28 * s, 36 * s, 5);
     ctx.fill();
     ctx.strokeStyle = '#4a5260';
     ctx.lineWidth = 2;
-    roundRect(r + L - 16, -18, 28, 36, 5);
+    roundRect(r + L - 16 * s, -18 * s, 28 * s, 36 * s, 5);
     ctx.stroke();
   }
 
@@ -584,6 +974,17 @@
     for (const b of balls) {
       b.hpEl.style.width = (b.hp / MAX_HP * 100) + '%';
       b.hpText.textContent = b.hp + ' / ' + MAX_HP;
+    }
+  }
+
+  function updateSpecialHud() {
+    for (const b of balls) {
+      if (!b.spEls) continue;
+      b.specials.forEach((s, i) => {
+        const pct = Math.min(1, s.timer / s.charge);
+        b.spEls[i].fill.style.width = (pct * 100) + '%';
+        b.spEls[i].root.classList.toggle('ready', pct >= 1);
+      });
     }
   }
 
