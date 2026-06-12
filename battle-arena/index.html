@@ -102,7 +102,11 @@
     font-weight: bold;
     color: #ffd75e;
     text-shadow: 0 0 8px rgba(255, 215, 94, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
+  #vs .pips { font-size: 12px; letter-spacing: 2px; text-shadow: none; }
   #arena-wrap { position: relative; }
   canvas {
     background: radial-gradient(circle at 50% 50%, #1a1e30, #11131f);
@@ -212,7 +216,8 @@
     .stats { display: none; } /* not enough room; the select cards carry this info */
     .specials { gap: 4px; }
     .sp .label { font-size: 7px; }
-    #vs { font-size: 14px; }
+    #vs { font-size: 14px; gap: 3px; }
+    #vs .pips { font-size: 8px; letter-spacing: 1px; }
     #select { flex-direction: column; gap: 10px; }
     .sel-vs { font-size: 18px; }
     .cards { grid-template-columns: 1fr 1fr; }
@@ -238,7 +243,7 @@
     <div class="stats" id="stats1"></div>
     <div class="specials" id="sp-left"></div>
   </div>
-  <div id="vs">VS</div>
+  <div id="vs"><span class="pips" id="pips1"></span><span>VS</span><span class="pips" id="pips2"></span></div>
   <div class="fighter right">
     <div class="name"><span id="name2">&mdash;</span><span class="rec" id="rec2"></span><span id="hp2-text"></span></div>
     <div class="hpbar"><div class="fill" id="hp2"></div></div>
@@ -294,6 +299,9 @@
 
   let balls, particles, shake, running, winner, lastTime;
   let projectiles, shockwaves, ghosts, announce;
+  // best-of-3 match state: first fighter to 2 round wins takes the match
+  const ROUNDS_TO_WIN = 2;
+  let roundWins = [0, 0], roundNum = 1, breakT = 0, pendingRound = false;
 
   // ------------------------------------------------------------------ roster
 
@@ -321,6 +329,12 @@
       color: '#c08cff', dark: '#8a4fd6', weapon: 'hands',
       cruise: 200, wLen: 34, wSpin: 2.8, dmg: 9, knock: 320,
       tag: ['DMG 9', 'FIST + PALM', 'GRAB &amp; SLAM'], ctag: 'punches &middot; grabs &amp; wall-slams',
+    },
+    {
+      id: 'bruiser', name: 'BRUISER', speakName: 'Bruiser', emoji: '\u{1F4A5}',
+      color: '#ffb13b', dark: '#d67f1f', weapon: 'none',
+      cruise: 245, wLen: 0, wSpin: 1.5, dmg: 10, knock: 380,
+      tag: ['DMG impact', 'NO WEAPON', 'RAMMING speed'], ctag: 'no weapon &middot; rams on impact',
     },
   ];
   const charById = id => CHARS.find(c => c.id === id);
@@ -544,6 +558,11 @@
         { key: 'megaton', name: 'MEGATON PUNCH', charge: 9,  range: [220, 9999] },
         { key: 'vortex',  name: 'VORTEX GRIP',   charge: 11, range: [140, 520] },
       ];
+      case 'none': return [
+        { key: 'charge',  name: 'BERSERK CHARGE',   charge: 8,  range: [220, 9999] },
+        { key: 'aura',    name: 'BLAZING AURA',     charge: 10, range: [0, 300] },
+        { key: 'rampage', name: 'RICOCHET RAMPAGE', charge: 12, range: [0, 9999] },
+      ];
     }
   }
 
@@ -562,9 +581,18 @@
       case 'lunge':   // dash at the enemy, blade-first
       case 'drive':   // spear-first piercing charge
       case 'megaton': // rocket punch dash
-        b.vx = Math.cos(aim) * (s.key === 'drive' ? 820 : 770);
-        b.vy = Math.sin(aim) * (s.key === 'drive' ? 820 : 770);
-        b.activeSpecial = { key: s.key, t: 0.65 };
+      case 'charge':  // full-body battering-ram dash
+        b.vx = Math.cos(aim) * (s.key === 'drive' ? 820 : s.key === 'charge' ? 800 : 770);
+        b.vy = Math.sin(aim) * (s.key === 'drive' ? 820 : s.key === 'charge' ? 800 : 770);
+        b.activeSpecial = { key: s.key, t: s.key === 'charge' ? 0.7 : 0.65 };
+        break;
+      case 'aura': // body ignites: nearby enemies burn over time
+        b.activeSpecial = { key: s.key, t: 3.0, tick: 0.2 };
+        break;
+      case 'rampage': // pinball mode: every wall bounce ricochets at the enemy
+        b.vx = Math.cos(aim) * 620;
+        b.vy = Math.sin(aim) * 620;
+        b.activeSpecial = { key: s.key, t: 2.6 };
         break;
       case 'beam': // launch a flying crescent of sword energy
         projectiles.push({
@@ -623,11 +651,39 @@
     if (!a) return;
     a.t -= dt;
     if (a.elapsed !== undefined) a.elapsed += dt;
-    if (a.key === 'lunge' || a.key === 'drive' || a.key === 'megaton') {
-      b.wAngle = Math.atan2(foe.y - b.y, foe.x - b.x); // weapon locked on target
+    if (a.key === 'lunge' || a.key === 'drive' || a.key === 'megaton' ||
+        a.key === 'charge' || a.key === 'rampage') {
+      if (a.key !== 'rampage') {
+        b.wAngle = Math.atan2(foe.y - b.y, foe.x - b.x); // weapon locked on target
+      }
       ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
                     r: b.r, wLen: b.wLen, color: b.color, body: true,
                     life: 0.22, max: 0.22 });
+    }
+    if (a.key === 'rampage') {
+      // keep pinball momentum up for the whole rampage
+      const spd = Math.hypot(b.vx, b.vy) || 1;
+      if (spd < 580) { b.vx = b.vx / spd * 620; b.vy = b.vy / spd * 620; }
+    }
+    if (a.key === 'aura') {
+      // flames boiling off the burning body
+      if (Math.random() < dt * 30) {
+        const ang = Math.random() * Math.PI * 2;
+        particles.push({
+          x: b.x + Math.cos(ang) * b.r, y: b.y + Math.sin(ang) * b.r,
+          vx: Math.cos(ang) * 50, vy: Math.sin(ang) * 50 - 50,
+          life: 0.35, max: 0.35, size: 2.5 + Math.random() * 3,
+          color: Math.random() < 0.5 ? '#ff9d3b' : '#ffd75e', text: null,
+        });
+      }
+      // burn ticks on anyone standing too close (no knockback — a burn that
+      // shoved the enemy out of the aura would defeat itself)
+      a.tick -= dt;
+      if (a.tick <= 0 && !foe.grabbedBy &&
+          Math.hypot(foe.x - b.x, foe.y - b.y) < b.r + foe.r + 110) {
+        dealHit(foe, 3, b.x, b.y, 0, '#ff9d3b', 5);
+        a.tick = 0.5;
+      }
     }
     if (a.key === 'whirlwind' || a.key === 'flurry' || a.key === 'skewer') {
       ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
@@ -826,6 +882,27 @@
   // ------------------------------------------------------------------ update
 
   function update(dt) {
+    // between rounds: freeze the fight, let effects finish, then next round
+    if (breakT > 0) {
+      breakT -= dt;
+      for (const p of particles) {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vx *= 0.96; p.vy *= 0.96;
+        p.life -= dt;
+      }
+      particles = particles.filter(p => p.life > 0);
+      shake = Math.max(0, shake - dt * 30);
+      if (announce) {
+        announce.t -= dt;
+        if (announce.t <= 0) announce = null;
+      }
+      if (breakT <= 0 && pendingRound) {
+        pendingRound = false;
+        beginRound(false);
+      }
+      return;
+    }
+
     for (const b of balls) {
       b.cooldown = Math.max(0, b.cooldown - dt);
       b.hitFlash = Math.max(0, b.hitFlash - dt);
@@ -847,6 +924,14 @@
       if (b.y + b.r > H)  { b.y = H - b.r; impact = Math.max(impact, Math.abs(b.vy)); b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
       if (hitWall) {
         b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
+        if (b.activeSpecial && b.activeSpecial.key === 'rampage') {
+          // pinball ricochet: every wall bounce launches straight at the enemy
+          const foe = b === balls[0] ? balls[1] : balls[0];
+          const a2 = Math.atan2(foe.y - b.y, foe.x - b.x);
+          const spd = Math.max(620, Math.hypot(b.vx, b.vy));
+          b.vx = Math.cos(a2) * spd;
+          b.vy = Math.sin(a2) * spd;
+        }
         if (b.slamArmed > 0) {
           // thrown by Kurt: the wall is the weapon — damage scales with how
           // hard the impact is (head-on at full throw speed hurts the most,
@@ -932,12 +1017,23 @@
     particles = particles.filter(p => p.life > 0);
     shake = Math.max(0, shake - dt * 30);
 
-    // win condition
+    // round over: the survivor takes the round; two rounds takes the match
     for (let i = 0; i < 2; i++) {
       if (balls[i].hp <= 0 && !winner) {
         balls[i].hp = 0;
-        winner = balls[1 - i];
-        endFight(balls[i]);
+        roundWins[1 - i]++;
+        updatePips();
+        if (roundWins[1 - i] >= ROUNDS_TO_WIN) {
+          winner = balls[1 - i];
+          endFight(balls[i]);
+        } else {
+          announce = { text: 'ROUND ' + roundNum + ': ' + balls[1 - i].name + '!',
+                       color: balls[1 - i].color, t: 2.2, max: 2.2 };
+          say(balls[1 - i].speakName + ' takes round ' + roundNum + '!');
+          roundNum++;
+          breakT = 2.4;
+          pendingRound = true;
+        }
       }
     }
   }
@@ -970,11 +1066,42 @@
 
     sfx.clash();
     spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, '#cfd6ff', 5, 120);
+
+    // weaponless fighters: the body IS the weapon
+    const approach = va - vb;
+    ramDamage(a, b, approach);
+    ramDamage(b, a, approach);
+  }
+
+  // body-impact damage for the weaponless fighter, scaled by how hard the
+  // collision is (Berserk Charge and Ricochet Rampage override it)
+  function ramDamage(att, def, approach) {
+    if (att.weapon !== 'none' || def.hp <= 0 || def.cooldown > 0) return;
+    const ak = att.activeSpecial ? att.activeSpecial.key : null;
+    let dmg, knock = 320, victimCd = HIT_COOLDOWN;
+    if (ak === 'charge')       { dmg = 18; knock = 600; }
+    else if (ak === 'rampage') { dmg = 8;  knock = 380; victimCd = 0.35; }
+    else dmg = Math.max(6, Math.min(14, Math.round(approach / 40)));
+
+    def.hp = Math.max(0, def.hp - dmg);
+    def.cooldown = victimCd;
+    def.hitFlash = 0.25;
+    const dx = def.x - att.x, dy = def.y - att.y;
+    const dd = Math.hypot(dx, dy) || 1;
+    def.vx += (dx / dd) * knock;
+    def.vy += (dy / dd) * knock;
+
+    if (ak === 'charge') sfx.hammer(); else sfx.punch();
+    spawnSparks((att.x + def.x) / 2, (att.y + def.y) / 2, '#ffb13b', 8 + dmg, 260);
+    spawnDamageText(def.x, def.y - def.r - 8, '-' + dmg, att.color);
+    shake = ak ? 11 : 5 + dmg * 0.4;
+    updateHud();
   }
 
   // the striking segments a fighter presents: most have one weapon arm,
   // Kurt has a fist on one side and an open grabbing palm on the other
   function segmentsOf(att) {
+    if (att.weapon === 'none') return []; // Bruiser hits with his body instead
     const reach = effectiveReach(att);
     if (att.weapon === 'hands') {
       return [
@@ -1315,7 +1442,19 @@
     if (b.weapon === 'sword') drawSword(b);
     else if (b.weapon === 'hammer') drawHammer(b, s);
     else if (b.weapon === 'spear') drawSpear(b);
-    else drawHands(b);
+    else if (b.weapon === 'hands') drawHands(b);
+    else drawStuds(b);
+  }
+
+  // Bruiser has no weapon — just a ring of brawler's rivets around the rim
+  function drawStuds(b) {
+    ctx.fillStyle = '#8a5512';
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * (b.r + 2), Math.sin(a) * (b.r + 2), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawSword(b) {
@@ -1521,13 +1660,31 @@
   function startFight() {
     initAudio();
     music.start();
-    setupFight(sel[0], sel[1]);
+    roundWins = [0, 0];
+    roundNum = 1;
+    breakT = 0;
+    pendingRound = false;
     overlay.classList.add('hidden');
+    beginRound(true);
+    const c1 = charById(sel[0]), c2 = charById(sel[1]);
+    say(c1.speakName + ' versus ' + c2.speakName + '. Round 1. Fight!');
+  }
+
+  function beginRound(first) {
+    setupFight(sel[0], sel[1]);
+    updatePips();
     running = true;
     lastTime = performance.now();
-    const c1 = charById(sel[0]), c2 = charById(sel[1]);
-    say(c1.speakName + ' versus ' + c2.speakName + '. Fight!');
-    announce = { text: 'FIGHT!', color: '#ffd75e', t: 1.2, max: 1.2 };
+    if (!first) say('Round ' + roundNum + '. Fight!');
+    announce = { text: 'ROUND ' + roundNum + ' — FIGHT!', color: '#ffd75e', t: 1.4, max: 1.4 };
+  }
+
+  function updatePips() {
+    [0, 1].forEach(i => {
+      const el = document.getElementById('pips' + (i + 1));
+      el.textContent = '●'.repeat(roundWins[i]) + '○'.repeat(ROUNDS_TO_WIN - roundWins[i]);
+      el.style.color = balls ? balls[i].color : '#9aa0b5';
+    });
   }
 
   function endFight(loser) {
@@ -1536,10 +1693,12 @@
     recordOf(loser.id).l++;
     saveRecords();
     for (const b of balls) b.recEl.textContent = recText(b.id);
-    say(winner.speakName + ' wins!');
+    say(winner.speakName + ' wins the match!');
     overlayTitle.textContent = winner.name + ' WINS!';
     overlayTitle.style.color = winner.color;
-    overlaySub.textContent = loser.name + ' was knocked out at 0 HP. Career: ' +
+    const wi = balls.indexOf(winner);
+    overlaySub.textContent = 'Match ' + roundWins[wi] + '-' + roundWins[1 - wi] + ' over ' +
+      loser.name + '. Career: ' +
       winner.name.replace(' II', '') + ' ' + recText(winner.id) + ' • ' +
       loser.name.replace(' II', '') + ' ' + recText(loser.id);
     selectBox.classList.add('hidden');
