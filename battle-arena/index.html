@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Battle Ball Arena</title>
+<style>
+  :root {
+    --blue: #4da6ff;
+    --red: #ff5e5e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0f1a;
+    color: #fff;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    user-select: none;
+  }
+  h1 {
+    margin: 14px 0 4px;
+    font-size: 28px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--blue), var(--red));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 860px;
+    max-width: 96vw;
+    margin: 8px 0;
+    gap: 16px;
+  }
+  .fighter {
+    flex: 1;
+  }
+  .fighter .name {
+    font-weight: bold;
+    font-size: 15px;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .fighter.right .name { flex-direction: row-reverse; }
+  .hpbar {
+    height: 18px;
+    background: #2a2d3e;
+    border-radius: 9px;
+    overflow: hidden;
+    border: 1px solid #444860;
+  }
+  .hpbar .fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.15s ease-out;
+    border-radius: 9px;
+  }
+  .fighter.left .fill { background: linear-gradient(90deg, #2f7fd6, var(--blue)); }
+  .fighter.right .fill { background: linear-gradient(270deg, #d63a3a, var(--red)); float: right; }
+  .stats {
+    font-size: 11px;
+    color: #9aa0b5;
+    margin-top: 3px;
+    display: flex;
+    gap: 10px;
+  }
+  .fighter.right .stats { justify-content: flex-end; }
+  #vs {
+    font-size: 22px;
+    font-weight: bold;
+    color: #ffd75e;
+    text-shadow: 0 0 8px rgba(255, 215, 94, 0.6);
+  }
+  #arena-wrap { position: relative; }
+  canvas {
+    background: radial-gradient(circle at 50% 50%, #1a1e30, #11131f);
+    border: 3px solid #3a3f5c;
+    border-radius: 10px;
+    display: block;
+    max-width: 96vw;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 12, 22, 0.78);
+    border-radius: 10px;
+    gap: 18px;
+  }
+  #overlay.hidden { display: none; }
+  #overlay .title {
+    font-size: 42px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-shadow: 0 0 20px currentColor;
+  }
+  #overlay .sub { color: #9aa0b5; font-size: 15px; }
+  #overlay button {
+    font-size: 18px;
+    font-weight: bold;
+    padding: 12px 34px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #fff;
+    background: linear-gradient(90deg, #2f7fd6, #d63a3a);
+    letter-spacing: 1px;
+    transition: transform 0.1s;
+  }
+  #overlay button:hover { transform: scale(1.07); }
+  #footer { color: #565b73; font-size: 12px; margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<h1>Battle Ball Arena</h1>
+
+<div id="hud">
+  <div class="fighter left">
+    <div class="name"><span style="color:var(--blue)">&#9876; SWORDBALL</span><span id="hp1-text">100 / 100</span></div>
+    <div class="hpbar"><div class="fill" id="hp1"></div></div>
+    <div class="stats"><span>DMG 8</span><span>SPIN fast</span><span>REACH long</span></div>
+  </div>
+  <div id="vs">VS</div>
+  <div class="fighter right">
+    <div class="name"><span style="color:var(--red)">&#128296; HAMMERBALL</span><span id="hp2-text">100 / 100</span></div>
+    <div class="hpbar"><div class="fill" id="hp2"></div></div>
+    <div class="stats"><span>DMG 14</span><span>SPIN slow</span><span>KNOCKBACK heavy</span></div>
+  </div>
+</div>
+
+<div id="arena-wrap">
+  <canvas id="arena" width="860" height="540"></canvas>
+  <div id="overlay">
+    <div class="title" id="overlay-title">BATTLE BALL ARENA</div>
+    <div class="sub" id="overlay-sub">Two balls enter. One ball leaves. Weapons spin &mdash; contact deals damage.</div>
+    <button id="play-btn">FIGHT!</button>
+  </div>
+</div>
+
+<div id="footer">Balls bounce off walls and shove each other on contact &middot; only weapon hits deal damage &middot; first to 0 HP loses</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('arena');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const overlay = document.getElementById('overlay');
+  const overlayTitle = document.getElementById('overlay-title');
+  const overlaySub = document.getElementById('overlay-sub');
+  const playBtn = document.getElementById('play-btn');
+
+  const MAX_HP = 100;
+  const HIT_COOLDOWN = 0.45;   // seconds of invulnerability after taking a weapon hit
+  const WALL_BOUNCE = 0.98;    // energy kept on wall bounce
+  const SPEED_DAMP = 0.6;      // how fast knockback speed decays back to cruise speed
+
+  let balls, particles, shake, running, winner, lastTime;
+
+  // ---------------------------------------------------------------- fighters
+
+  function makeBalls() {
+    return [
+      { // Swordball: fast spin, long reach, lighter hits
+        name: 'SWORDBALL',
+        color: '#4da6ff', dark: '#2f7fd6',
+        x: W * 0.25, y: H * 0.5,
+        vx: 170, vy: -130,
+        r: 32,
+        cruise: 210,           // speed the ball settles back to
+        hp: MAX_HP,
+        weapon: 'sword',
+        wLen: 78,              // weapon reach beyond ball edge
+        wAngle: 0,
+        wSpin: 3.4,            // radians / second
+        dmg: 8,
+        knock: 260,            // knockback impulse dealt to the victim
+        hitFlash: 0,           // victim flash timer
+        cooldown: 0,           // can't be damaged while > 0
+        hpEl: document.getElementById('hp1'),
+        hpText: document.getElementById('hp1-text'),
+      },
+      { // Hammerball: slow spin, shorter reach, heavy hits that smash you into walls
+        name: 'HAMMERBALL',
+        color: '#ff5e5e', dark: '#d63a3a',
+        x: W * 0.75, y: H * 0.5,
+        vx: -150, vy: 140,
+        r: 32,
+        cruise: 190,
+        hp: MAX_HP,
+        weapon: 'hammer',
+        wLen: 58,
+        wAngle: Math.PI,
+        wSpin: -2.1,
+        dmg: 14,
+        knock: 420,
+        hitFlash: 0,
+        cooldown: 0,
+        hpEl: document.getElementById('hp2'),
+        hpText: document.getElementById('hp2-text'),
+      },
+    ];
+  }
+
+  function reset() {
+    balls = makeBalls();
+    particles = [];
+    shake = 0;
+    winner = null;
+    updateHud();
+  }
+
+  // ------------------------------------------------------------------ update
+
+  function update(dt) {
+    for (const b of balls) {
+      // move
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      // bounce off walls
+      if (b.x - b.r < 0)  { b.x = b.r;     b.vx =  Math.abs(b.vx) * WALL_BOUNCE; }
+      if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx) * WALL_BOUNCE; }
+      if (b.y - b.r < 0)  { b.y = b.r;     b.vy =  Math.abs(b.vy) * WALL_BOUNCE; }
+      if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; }
+
+      // ease speed back toward cruise speed after knockbacks
+      const sp = Math.hypot(b.vx, b.vy) || 1;
+      const target = sp + (b.cruise - sp) * Math.min(1, SPEED_DAMP * dt);
+      b.vx = b.vx / sp * target;
+      b.vy = b.vy / sp * target;
+
+      // the weapon is the only thing that animates on the ball: spin it
+      b.wAngle += b.wSpin * dt;
+
+      b.cooldown = Math.max(0, b.cooldown - dt);
+      b.hitFlash = Math.max(0, b.hitFlash - dt);
+    }
+
+    bodyCollision(balls[0], balls[1]);
+    weaponHit(balls[0], balls[1]);
+    weaponHit(balls[1], balls[0]);
+
+    // particles
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.life -= dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+    shake = Math.max(0, shake - dt * 30);
+
+    // win condition
+    for (let i = 0; i < 2; i++) {
+      if (balls[i].hp <= 0 && !winner) {
+        balls[i].hp = 0;
+        winner = balls[1 - i];
+        endFight();
+      }
+    }
+  }
+
+  // balls shove each other: elastic bounce that can smack them into walls
+  function bodyCollision(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.hypot(dx, dy);
+    const minDist = a.r + b.r;
+    if (dist === 0 || dist >= minDist) return;
+
+    const nx = dx / dist, ny = dy / dist;
+
+    // separate the overlap
+    const push = (minDist - dist) / 2;
+    a.x -= nx * push; a.y -= ny * push;
+    b.x += nx * push; b.y += ny * push;
+
+    // swap velocity along the collision normal (equal mass elastic bounce)
+    const va = a.vx * nx + a.vy * ny;
+    const vb = b.vx * nx + b.vy * ny;
+    if (va - vb <= 0) return; // already separating
+    a.vx += (vb - va) * nx; a.vy += (vb - va) * ny;
+    b.vx += (va - vb) * nx; b.vy += (va - vb) * ny;
+
+    spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, '#cfd6ff', 5, 120);
+  }
+
+  // weapon of `att` hitting the body of `def`
+  function weaponHit(att, def) {
+    if (def.cooldown > 0) return;
+
+    // weapon is a segment from the ball edge out to the tip
+    const cos = Math.cos(att.wAngle), sin = Math.sin(att.wAngle);
+    const x1 = att.x + cos * att.r;
+    const y1 = att.y + sin * att.r;
+    const x2 = att.x + cos * (att.r + att.wLen);
+    const y2 = att.y + sin * (att.r + att.wLen);
+
+    // closest point on segment to defender center
+    const ex = x2 - x1, ey = y2 - y1;
+    const len2 = ex * ex + ey * ey;
+    let t = ((def.x - x1) * ex + (def.y - y1) * ey) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = x1 + ex * t, py = y1 + ey * t;
+    const dist = Math.hypot(def.x - px, def.y - py);
+
+    const blade = att.weapon === 'hammer' ? 14 : 6; // weapon thickness
+    if (dist > def.r + blade) return;
+
+    // --- HIT! ---
+    def.hp = Math.max(0, def.hp - att.dmg);
+    def.cooldown = HIT_COOLDOWN;
+    def.hitFlash = 0.25;
+
+    // knockback: shove the defender away — can bounce them into walls
+    let kx = def.x - px, ky = def.y - py;
+    const kd = Math.hypot(kx, ky) || 1;
+    def.vx += (kx / kd) * att.knock;
+    def.vy += (ky / kd) * att.knock;
+
+    spawnSparks(px, py, att.weapon === 'hammer' ? '#ffb347' : '#fff27a',
+                att.weapon === 'hammer' ? 16 : 10,
+                att.weapon === 'hammer' ? 320 : 220);
+    spawnDamageText(def.x, def.y - def.r - 8, '-' + att.dmg, att.color);
+    shake = att.weapon === 'hammer' ? 9 : 5;
+    updateHud();
+  }
+
+  // --------------------------------------------------------------- particles
+
+  function spawnSparks(x, y, color, n, speed) {
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const sp = speed * (0.4 + Math.random() * 0.6);
+      particles.push({
+        x, y,
+        vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+        life: 0.25 + Math.random() * 0.3,
+        max: 0.55,
+        size: 2 + Math.random() * 3,
+        color, text: null,
+      });
+    }
+  }
+
+  function spawnDamageText(x, y, text, color) {
+    particles.push({ x, y, vx: 0, vy: -55, life: 0.8, max: 0.8, size: 18, color, text });
+  }
+
+  // -------------------------------------------------------------------- draw
+
+  function draw() {
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    }
+    ctx.clearRect(-20, -20, W + 40, H + 40);
+
+    // arena floor lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 90, 0, Math.PI * 2);
+    ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
+    ctx.stroke();
+
+    for (const b of balls) drawBall(b);
+
+    for (const p of particles) {
+      const a = Math.max(0, p.life / p.max);
+      ctx.globalAlpha = a;
+      if (p.text) {
+        ctx.fillStyle = p.color;
+        ctx.font = 'bold ' + p.size + 'px Segoe UI, Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(p.text, p.x, p.y);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function drawBall(b) {
+    // weapon first so it sits "behind" the ball at the hilt
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(b.wAngle);
+    if (b.weapon === 'sword') drawSword(b); else drawHammer(b);
+    ctx.restore();
+
+    // body
+    const flash = b.hitFlash > 0;
+    const grad = ctx.createRadialGradient(b.x - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.2, b.x, b.y, b.r);
+    grad.addColorStop(0, flash ? '#ffffff' : b.color);
+    grad.addColorStop(1, flash ? '#ffd0d0' : b.dark);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // angry little eyes facing the enemy
+    const foe = balls[0] === b ? balls[1] : balls[0];
+    const fa = Math.atan2(foe.y - b.y, foe.x - b.x);
+    for (const side of [-1, 1]) {
+      const ex = b.x + Math.cos(fa + side * 0.45) * b.r * 0.45;
+      const ey = b.y + Math.sin(fa + side * 0.45) * b.r * 0.45;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1e30';
+      ctx.beginPath();
+      ctx.arc(ex + Math.cos(fa) * 2.5, ey + Math.sin(fa) * 2.5, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // small HP ring around the ball
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r + 6, -Math.PI / 2, -Math.PI / 2 + (b.hp / MAX_HP) * Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // drawn in local space: +x points along the weapon, ball edge at x = r
+  function drawSword(b) {
+    const r = b.r, L = b.wLen;
+    // hilt
+    ctx.fillStyle = '#8a5a2b';
+    ctx.fillRect(r - 8, -3, 16, 6);
+    // crossguard
+    ctx.fillStyle = '#c9a227';
+    ctx.fillRect(r + 8, -10, 5, 20);
+    // blade
+    const g = ctx.createLinearGradient(r + 13, 0, r + L, 0);
+    g.addColorStop(0, '#e8eef7');
+    g.addColorStop(1, '#9fb4cc');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(r + 13, -5);
+    ctx.lineTo(r + L - 10, -5);
+    ctx.lineTo(r + L, 0);       // point
+    ctx.lineTo(r + L - 10, 5);
+    ctx.lineTo(r + 13, 5);
+    ctx.closePath();
+    ctx.fill();
+    // fuller line
+    ctx.strokeStyle = 'rgba(90,110,140,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(r + 14, 0); ctx.lineTo(r + L - 12, 0);
+    ctx.stroke();
+  }
+
+  function drawHammer(b) {
+    const r = b.r, L = b.wLen;
+    // handle
+    ctx.fillStyle = '#8a5a2b';
+    ctx.fillRect(r - 6, -4, L - 8, 8);
+    ctx.strokeStyle = '#5d3c1b';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(r - 6, -4, L - 8, 8);
+    // head
+    const g = ctx.createLinearGradient(r + L - 16, -18, r + L + 12, 18);
+    g.addColorStop(0, '#b9c2cf');
+    g.addColorStop(1, '#6e7886');
+    ctx.fillStyle = g;
+    roundRect(r + L - 16, -18, 28, 36, 5);
+    ctx.fill();
+    ctx.strokeStyle = '#4a5260';
+    ctx.lineWidth = 2;
+    roundRect(r + L - 16, -18, 28, 36, 5);
+    ctx.stroke();
+  }
+
+  function roundRect(x, y, w, h, rad) {
+    ctx.beginPath();
+    ctx.moveTo(x + rad, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rad);
+    ctx.arcTo(x + w, y + h, x, y + h, rad);
+    ctx.arcTo(x, y + h, x, y, rad);
+    ctx.arcTo(x, y, x + w, y, rad);
+    ctx.closePath();
+  }
+
+  // --------------------------------------------------------------------- ui
+
+  function updateHud() {
+    for (const b of balls) {
+      b.hpEl.style.width = (b.hp / MAX_HP * 100) + '%';
+      b.hpText.textContent = b.hp + ' / ' + MAX_HP;
+    }
+  }
+
+  function endFight() {
+    running = false;
+    overlayTitle.textContent = winner.name + ' WINS!';
+    overlayTitle.style.color = winner.color;
+    overlaySub.textContent = (winner === balls[0] ? balls[1].name : balls[0].name) +
+      ' was knocked out at 0 HP.';
+    playBtn.textContent = 'REMATCH';
+    overlay.classList.remove('hidden');
+  }
+
+  playBtn.addEventListener('click', () => {
+    reset();
+    overlay.classList.add('hidden');
+    running = true;
+    lastTime = performance.now();
+  });
+
+  // -------------------------------------------------------------------- loop
+
+  function frame(now) {
+    if (running) {
+      const dt = Math.min(0.033, (now - lastTime) / 1000);
+      lastTime = now;
+      update(dt);
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
