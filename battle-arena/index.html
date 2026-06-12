@@ -12,6 +12,9 @@
     --purple: #c08cff;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* while a menu is open the page must not scroll-chain behind it,
+     or touch scrolling moves the body instead of the menu */
+  body.noscroll { overflow: hidden; }
   body {
     background: #0d0f1a;
     color: #fff;
@@ -123,6 +126,8 @@
     background: rgba(10, 12, 22, 0.94);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
   }
   #overlay.hidden { display: none; }
   /* inner wrapper grows with its content, so tall menus scroll instead of
@@ -317,6 +322,11 @@
   // best-of-3 match state: first fighter to 2 round wins takes the match
   const ROUNDS_TO_WIN = 2;
   let roundWins = [0, 0], roundNum = 1, breakT = 0, pendingRound = false;
+  // K.O. sequence: brief hit-stop freeze, then slow motion, then the burst
+  const KO_TIME = 2.0;
+  let ko = null; // { t, loserIdx }
+  // balls faster than this leave afterimage trails (they fade when it slows)
+  const AFTERIMAGE_SPEED = 360;
 
   // ------------------------------------------------------------------ roster
 
@@ -450,6 +460,15 @@
     },
     whoosh() { // weapon hurled through the air
       noise(0.3, 0.18, 1200, 'bandpass');
+    },
+    ko() { // the big one: deep slow-motion boom and a falling wail
+      tone(70, 18, 0.9, 'sine', 0.6);
+      noise(0.6, 0.35, 320, 'lowpass');
+      tone(520, 90, 0.7, 'sawtooth', 0.16);
+    },
+    explode() { // the loser pops at the end of the slow-mo
+      noise(0.45, 0.45, 900, 'lowpass');
+      tone(150, 30, 0.5, 'square', 0.3);
     },
   };
 
@@ -751,6 +770,7 @@
 
   // shared hit application — bypasses the invuln window, then re-applies it
   function dealHit(def, dmg, fromX, fromY, knock, color, shakeAmt) {
+    if (ko || def.hp <= 0) return;
     def.hp = Math.max(0, def.hp - dmg);
     def.cooldown = HIT_COOLDOWN;
     def.hitFlash = 0.25;
@@ -918,6 +938,32 @@
       return;
     }
 
+    // K.O.! hit-stop freeze, then everything plays out in slow motion
+    if (ko) {
+      const real = dt;
+      ko.t -= real;
+      const elapsed = KO_TIME - ko.t;
+      dt *= elapsed < 0.18 ? 0 : 0.15;
+      const loser = balls[ko.loserIdx];
+      loser.wAngle += real * 14;  // weapon flailing wildly
+      loser.hitFlash = 0.25;      // stuck flashing white
+      ghosts.push({ x: loser.x, y: loser.y, wAngle: loser.wAngle,
+                    weapon: loser.weapon, r: loser.r, wLen: loser.wLen,
+                    color: loser.color, body: true, life: 0.3, max: 0.3 });
+      if (ko.t <= 0) {
+        // burst into sparks, then resolve the round
+        spawnSparks(loser.x, loser.y, loser.color, 40, 500);
+        spawnSparks(loser.x, loser.y, '#ffffff', 22, 350);
+        sfx.explode();
+        shake = 16;
+        loser.dead = true;
+        const li = ko.loserIdx;
+        ko = null;
+        finishRound(li);
+        return;
+      }
+    }
+
     for (const b of balls) {
       b.cooldown = Math.max(0, b.cooldown - dt);
       b.hitFlash = Math.max(0, b.hitFlash - dt);
@@ -972,6 +1018,20 @@
       b.vx = b.vx / sp * target;
       b.vy = b.vy / sp * target;
 
+      // speed afterimages: fast balls leave a trail that fades away
+      // again once they slow back down
+      if (target > AFTERIMAGE_SPEED) {
+        b.trailAcc = (b.trailAcc || 0) + dt;
+        if (b.trailAcc >= 0.03) {
+          b.trailAcc = 0;
+          ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
+                        r: b.r, wLen: effectiveReach(b), color: b.color,
+                        body: true, life: 0.16, max: 0.16 });
+        }
+      } else {
+        b.trailAcc = 0;
+      }
+
       // the weapon is the only thing that animates on the ball: spin it
       // (whirlwind / flurry send it into overdrive)
       const ak = b.activeSpecial ? b.activeSpecial.key : null;
@@ -1008,13 +1068,14 @@
       }
     }
 
-    updateSpecials(balls[0], balls[1], dt);
-    updateSpecials(balls[1], balls[0], dt);
-    updateSpecialHud();
-
+    if (!ko) { // the fight is over once the K.O. lands
+      updateSpecials(balls[0], balls[1], dt);
+      updateSpecials(balls[1], balls[0], dt);
+      updateSpecialHud();
+      weaponHit(balls[0], balls[1]);
+      weaponHit(balls[1], balls[0]);
+    }
     bodyCollision(balls[0], balls[1]);
-    weaponHit(balls[0], balls[1]);
-    weaponHit(balls[1], balls[0]);
     updateProjectiles(dt);
 
     if (announce) {
@@ -1032,24 +1093,31 @@
     particles = particles.filter(p => p.life > 0);
     shake = Math.max(0, shake - dt * 30);
 
-    // round over: the survivor takes the round; two rounds takes the match
+    // a knockout starts the K.O. sequence; the round resolves after it
     for (let i = 0; i < 2; i++) {
-      if (balls[i].hp <= 0 && !winner) {
+      if (balls[i].hp <= 0 && !winner && !ko) {
         balls[i].hp = 0;
-        roundWins[1 - i]++;
-        updatePips();
-        if (roundWins[1 - i] >= ROUNDS_TO_WIN) {
-          winner = balls[1 - i];
-          endFight(balls[i]);
-        } else {
-          announce = { text: 'ROUND ' + roundNum + ': ' + balls[1 - i].name + '!',
-                       color: balls[1 - i].color, t: 2.2, max: 2.2 };
-          say(balls[1 - i].speakName + ' takes round ' + roundNum + '!');
-          roundNum++;
-          breakT = 2.4;
-          pendingRound = true;
-        }
+        ko = { t: KO_TIME, loserIdx: i };
+        sfx.ko();
+        say('Knockout!');
       }
+    }
+  }
+
+  // the survivor takes the round; two rounds takes the match
+  function finishRound(i) {
+    roundWins[1 - i]++;
+    updatePips();
+    if (roundWins[1 - i] >= ROUNDS_TO_WIN) {
+      winner = balls[1 - i];
+      endFight(balls[i]);
+    } else {
+      announce = { text: 'ROUND ' + roundNum + ': ' + balls[1 - i].name + '!',
+                   color: balls[1 - i].color, t: 2.2, max: 2.2 };
+      say(balls[1 - i].speakName + ' takes round ' + roundNum + '!');
+      roundNum++;
+      breakT = 2.4;
+      pendingRound = true;
     }
   }
 
@@ -1091,7 +1159,7 @@
   // body-impact damage for the weaponless fighter, scaled by how hard the
   // collision is (Berserk Charge and Ricochet Rampage override it)
   function ramDamage(att, def, approach) {
-    if (att.weapon !== 'none' || def.hp <= 0 || def.cooldown > 0) return;
+    if (ko || att.weapon !== 'none' || def.hp <= 0 || def.cooldown > 0) return;
     const ak = att.activeSpecial ? att.activeSpecial.key : null;
     let dmg, knock = 320, victimCd = HIT_COOLDOWN;
     if (ak === 'charge')       { dmg = 18; knock = 600; }
@@ -1365,6 +1433,39 @@
     ctx.globalAlpha = 1;
     ctx.restore();
 
+    // K.O. splash — old-school fighting game style
+    if (ko) {
+      const e = KO_TIME - ko.t;
+      // white impact flash on the finishing blow
+      if (e < 0.14) {
+        ctx.fillStyle = 'rgba(255,255,255,' + ((1 - e / 0.14) * 0.85).toFixed(3) + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+      // dark vignette while time crawls
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(0, 0, W, H);
+      const grow = Math.min(1, e / 0.35);
+      const pop = grow * (1 + Math.max(0, 0.35 - e) * 2.2);
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.rotate(Math.sin(e * 3) * 0.04);
+      ctx.scale(pop, pop);
+      const g = ctx.createLinearGradient(0, -70, 0, 70);
+      g.addColorStop(0, '#ffe27a');
+      g.addColorStop(0.55, '#ff9d2e');
+      g.addColorStop(1, '#e23b3b');
+      ctx.font = 'bold 170px Segoe UI, Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#3a1010';
+      ctx.strokeText('K.O.!', 0, 0);
+      ctx.fillStyle = g;
+      ctx.fillText('K.O.!', 0, 0);
+      ctx.restore();
+      ctx.textBaseline = 'alphabetic';
+    }
+
     // special move announcement banner (drawn unshaken, on top of everything)
     if (announce) {
       const fade = Math.min(1, announce.t / 0.35);
@@ -1384,6 +1485,7 @@
   }
 
   function drawBall(b) {
+    if (b.dead) return; // burst into sparks at the end of the K.O.
     const spec = b.activeSpecial ? b.activeSpecial.key : null;
 
     // seismic slam windup: pulsing ring warns the hit is coming
@@ -1718,6 +1820,7 @@
     playBtn.textContent = 'FIGHT!';
     changeBtn.classList.add('hidden');
     overlay.classList.remove('hidden');
+    if (document.body) document.body.classList.add('noscroll');
   }
 
   function startFight() {
@@ -1727,7 +1830,9 @@
     roundNum = 1;
     breakT = 0;
     pendingRound = false;
+    ko = null;
     overlay.classList.add('hidden');
+    if (document.body) document.body.classList.remove('noscroll');
     beginRound(true);
     const c1 = charById(sel[0]), c2 = charById(sel[1]);
     say(c1.speakName + ' versus ' + c2.speakName + '. Round 1. Fight!');
@@ -1768,6 +1873,7 @@
     playBtn.textContent = 'REMATCH';
     changeBtn.classList.remove('hidden');
     overlay.classList.remove('hidden');
+    if (document.body) document.body.classList.add('noscroll');
   }
 
   playBtn.addEventListener('click', startFight);
