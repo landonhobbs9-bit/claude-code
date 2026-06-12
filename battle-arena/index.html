@@ -24,7 +24,8 @@
   }
   h1 {
     margin: 14px 0 4px;
-    font-size: 28px;
+    font-size: clamp(17px, 5.5vw, 28px);
+    white-space: nowrap;
     letter-spacing: 3px;
     text-transform: uppercase;
     background: linear-gradient(90deg, var(--blue), var(--green), var(--purple), var(--red));
@@ -36,11 +37,11 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 860px;
-    max-width: 96vw;
+    width: min(860px, 96vw);
     margin: 8px 0;
     gap: 16px;
   }
+  .fighter { min-width: 0; }
   .fighter { flex: 1; }
   .fighter .name {
     font-weight: bold;
@@ -109,26 +110,37 @@
     border-radius: 10px;
     display: block;
     max-width: 96vw;
+    height: auto; /* keep the 860x540 aspect when the viewport is narrow */
   }
   #overlay {
-    position: absolute;
+    position: fixed; /* full-screen menu so it never spills over the HUD */
     inset: 0;
+    z-index: 50;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 12, 22, 0.88);
-    border-radius: 10px;
+    background: rgba(10, 12, 22, 0.94);
     gap: 14px;
+    padding: 18px 10px;
+    overflow-y: auto;
   }
   #overlay.hidden { display: none; }
+  /* auto margins center when content fits, but allow scrolling when it doesn't */
+  #overlay .title { margin-top: auto; text-align: center; }
+  #overlay .btn-row { margin-bottom: auto; }
   #overlay .title {
-    font-size: 36px;
+    font-size: clamp(24px, 7vw, 36px);
     font-weight: bold;
     letter-spacing: 2px;
     text-shadow: 0 0 20px currentColor;
   }
-  #overlay .sub { color: #9aa0b5; font-size: 14px; }
+  #overlay .sub {
+    color: #9aa0b5;
+    font-size: 14px;
+    text-align: center;
+    max-width: 92%;
+  }
   #select { display: flex; align-items: center; gap: 18px; }
   #select.hidden { display: none; }
   .sel-col h3 {
@@ -190,6 +202,29 @@
     cursor: pointer;
   }
   #music-btn.on { color: #ffd75e; border-color: #ffd75e; }
+
+  /* ------------------------------------------------------------- mobile */
+  @media (max-width: 760px) {
+    #hud { gap: 8px; }
+    .fighter .name { font-size: 11px; gap: 4px; }
+    .fighter .rec { font-size: 9px; }
+    .hpbar { height: 13px; }
+    .stats { display: none; } /* not enough room; the select cards carry this info */
+    .specials { gap: 4px; }
+    .sp .label { font-size: 7px; }
+    #vs { font-size: 14px; }
+    #select { flex-direction: column; gap: 10px; }
+    .sel-vs { font-size: 18px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+    .card { width: 124px; }
+    #overlay button { font-size: 15px; padding: 10px 22px; }
+    #footer {
+      flex-direction: column;
+      gap: 6px;
+      text-align: center;
+      padding: 0 12px;
+    }
+  }
 </style>
 </head>
 <body>
