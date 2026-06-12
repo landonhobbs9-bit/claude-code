@@ -8,6 +8,8 @@
   :root {
     --blue: #4da6ff;
     --red: #ff5e5e;
+    --green: #5ee68a;
+    --purple: #c08cff;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -25,7 +27,7 @@
     font-size: 28px;
     letter-spacing: 3px;
     text-transform: uppercase;
-    background: linear-gradient(90deg, var(--blue), var(--red));
+    background: linear-gradient(90deg, var(--blue), var(--green), var(--purple), var(--red));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -39,17 +41,17 @@
     margin: 8px 0;
     gap: 16px;
   }
-  .fighter {
-    flex: 1;
-  }
+  .fighter { flex: 1; }
   .fighter .name {
     font-weight: bold;
     font-size: 15px;
     margin-bottom: 4px;
     display: flex;
     justify-content: space-between;
+    align-items: baseline;
   }
   .fighter.right .name { flex-direction: row-reverse; }
+  .fighter .rec { font-size: 11px; color: #9aa0b5; font-weight: normal; }
   .hpbar {
     height: 18px;
     background: #2a2d3e;
@@ -63,8 +65,7 @@
     transition: width 0.15s ease-out;
     border-radius: 9px;
   }
-  .fighter.left .fill { background: linear-gradient(90deg, #2f7fd6, var(--blue)); }
-  .fighter.right .fill { background: linear-gradient(270deg, #d63a3a, var(--red)); float: right; }
+  .fighter.right .fill { float: right; }
   .stats {
     font-size: 11px;
     color: #9aa0b5;
@@ -90,10 +91,8 @@
     overflow: hidden;
   }
   .sp .mfill { height: 100%; width: 0%; border-radius: 3px; }
-  .fighter.left .sp .mfill { background: var(--blue); }
-  .fighter.right .sp .mfill { background: var(--red); }
   .fighter .sp.ready .mfill {
-    background: linear-gradient(90deg, #ffd75e, #ffaa2b);
+    background: linear-gradient(90deg, #ffd75e, #ffaa2b) !important;
     box-shadow: 0 0 6px #ffd75e;
   }
   .fighter .sp.ready .label { color: #ffd75e; }
@@ -118,22 +117,50 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 12, 22, 0.78);
+    background: rgba(10, 12, 22, 0.88);
     border-radius: 10px;
-    gap: 18px;
+    gap: 14px;
   }
   #overlay.hidden { display: none; }
   #overlay .title {
-    font-size: 42px;
+    font-size: 36px;
     font-weight: bold;
     letter-spacing: 2px;
     text-shadow: 0 0 20px currentColor;
   }
-  #overlay .sub { color: #9aa0b5; font-size: 15px; }
+  #overlay .sub { color: #9aa0b5; font-size: 14px; }
+  #select { display: flex; align-items: center; gap: 18px; }
+  #select.hidden { display: none; }
+  .sel-col h3 {
+    text-align: center;
+    font-size: 13px;
+    letter-spacing: 2px;
+    color: #9aa0b5;
+    margin-bottom: 8px;
+  }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card {
+    width: 132px;
+    padding: 8px 6px;
+    background: #1c2032;
+    border: 2px solid #3a3f5c;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.08s;
+  }
+  .card:hover { transform: scale(1.05); }
+  .card.sel { border-color: var(--cc); box-shadow: 0 0 12px var(--cc); }
+  .card .cemoji { font-size: 26px; }
+  .card .cname { font-size: 12px; font-weight: bold; color: var(--cc); margin: 2px 0; }
+  .card .ctag { font-size: 9px; color: #9aa0b5; }
+  .card .crec { font-size: 10px; color: #ffd75e; margin-top: 3px; }
+  .sel-vs { font-size: 26px; font-weight: bold; color: #ffd75e; }
+  .btn-row { display: flex; gap: 12px; }
   #overlay button {
-    font-size: 18px;
+    font-size: 17px;
     font-weight: bold;
-    padding: 12px 34px;
+    padding: 11px 30px;
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -143,7 +170,26 @@
     transition: transform 0.1s;
   }
   #overlay button:hover { transform: scale(1.07); }
-  #footer { color: #565b73; font-size: 12px; margin: 10px 0; }
+  #overlay button.alt { background: #3a3f5c; }
+  #overlay button.hidden { display: none; }
+  #footer {
+    color: #565b73;
+    font-size: 12px;
+    margin: 10px 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  #music-btn {
+    background: #1c2032;
+    color: #9aa0b5;
+    border: 1px solid #3a3f5c;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  #music-btn.on { color: #ffd75e; border-color: #ffd75e; }
 </style>
 </head>
 <body>
@@ -152,16 +198,16 @@
 
 <div id="hud">
   <div class="fighter left">
-    <div class="name"><span style="color:var(--blue)">&#9876; SWORDBALL</span><span id="hp1-text">100 / 100</span></div>
+    <div class="name"><span id="name1">&mdash;</span><span class="rec" id="rec1"></span><span id="hp1-text"></span></div>
     <div class="hpbar"><div class="fill" id="hp1"></div></div>
-    <div class="stats"><span>DMG 8</span><span>SPIN fast</span><span>REACH long</span></div>
+    <div class="stats" id="stats1"></div>
     <div class="specials" id="sp-left"></div>
   </div>
   <div id="vs">VS</div>
   <div class="fighter right">
-    <div class="name"><span style="color:var(--red)">&#128296; HAMMERBALL</span><span id="hp2-text">100 / 100</span></div>
+    <div class="name"><span id="name2">&mdash;</span><span class="rec" id="rec2"></span><span id="hp2-text"></span></div>
     <div class="hpbar"><div class="fill" id="hp2"></div></div>
-    <div class="stats"><span>DMG 14</span><span>SPIN slow</span><span>KNOCKBACK heavy</span></div>
+    <div class="stats" id="stats2"></div>
     <div class="specials" id="sp-right"></div>
   </div>
 </div>
@@ -170,12 +216,23 @@
   <canvas id="arena" width="860" height="540"></canvas>
   <div id="overlay">
     <div class="title" id="overlay-title">BATTLE BALL ARENA</div>
-    <div class="sub" id="overlay-sub">Two balls enter. One ball leaves. Weapons spin &mdash; contact deals damage.</div>
-    <button id="play-btn">FIGHT!</button>
+    <div class="sub" id="overlay-sub">Choose your fighters &mdash; weapons spin, contact deals damage.</div>
+    <div id="select">
+      <div class="sel-col"><h3>FIGHTER 1</h3><div class="cards" id="cards1"></div></div>
+      <div class="sel-vs">VS</div>
+      <div class="sel-col"><h3>FIGHTER 2</h3><div class="cards" id="cards2"></div></div>
+    </div>
+    <div class="btn-row">
+      <button id="play-btn">FIGHT!</button>
+      <button id="change-btn" class="alt hidden">CHANGE FIGHTERS</button>
+    </div>
   </div>
 </div>
 
-<div id="footer">Balls bounce off walls and shove each other on contact &middot; only weapon hits deal damage &middot; first to 0 HP loses</div>
+<div id="footer">
+  <span>weapon hits deal damage &middot; body contact shoves &middot; first to 0 HP loses</span>
+  <button id="music-btn" class="on">&#9835; MUSIC ON</button>
+</div>
 
 <script>
 (() => {
@@ -186,7 +243,10 @@
   const overlay = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlay-title');
   const overlaySub = document.getElementById('overlay-sub');
+  const selectBox = document.getElementById('select');
   const playBtn = document.getElementById('play-btn');
+  const changeBtn = document.getElementById('change-btn');
+  const musicBtn = document.getElementById('music-btn');
 
   const MAX_HP = 100;
   const HIT_COOLDOWN = 0.45;   // seconds of invulnerability after taking a weapon hit
@@ -200,6 +260,46 @@
   let balls, particles, shake, running, winner, lastTime;
   let projectiles, shockwaves, ghosts, announce;
 
+  // ------------------------------------------------------------------ roster
+
+  const CHARS = [
+    {
+      id: 'sword', name: 'SWORDBALL', speakName: 'Swordball', emoji: '⚔️',
+      color: '#4da6ff', dark: '#2f7fd6', weapon: 'sword',
+      cruise: 210, wLen: 78, wSpin: 3.4, dmg: 8, knock: 260,
+      tag: ['DMG 8', 'SPIN fast', 'REACH long'], ctag: 'fast spin &middot; long blade',
+    },
+    {
+      id: 'hammer', name: 'HAMMERBALL', speakName: 'Hammerball', emoji: '\u{1F528}',
+      color: '#ff5e5e', dark: '#d63a3a', weapon: 'hammer',
+      cruise: 190, wLen: 58, wSpin: -2.1, dmg: 14, knock: 420,
+      tag: ['DMG 14', 'SPIN slow', 'KNOCKBACK heavy'], ctag: 'slow &middot; crushing blows',
+    },
+    {
+      id: 'spear', name: 'SPEARBALL', speakName: 'Spearball', emoji: '\u{1F531}',
+      color: '#5ee68a', dark: '#2da85c', weapon: 'spear',
+      cruise: 225, wLen: 100, wSpin: 2.6, dmg: 7, knock: 230,
+      tag: ['DMG 7', 'REACH huge', 'SPEED high'], ctag: 'huge reach &middot; quick pokes',
+    },
+    {
+      id: 'kurt', name: 'KURT', speakName: 'Kurt', emoji: '\u{1F44A}',
+      color: '#c08cff', dark: '#8a4fd6', weapon: 'hands',
+      cruise: 200, wLen: 34, wSpin: 2.8, dmg: 9, knock: 320,
+      tag: ['DMG 9', 'FIST + PALM', 'GRAB &amp; SLAM'], ctag: 'punches &middot; grabs &amp; wall-slams',
+    },
+  ];
+  const charById = id => CHARS.find(c => c.id === id);
+
+  // ------------------------------------------------------------ win counter
+
+  let records = {};
+  try { records = JSON.parse(localStorage.getItem('bba-records')) || {}; } catch (e) {}
+  function recordOf(id) { return records[id] || (records[id] = { w: 0, l: 0 }); }
+  function saveRecords() {
+    try { localStorage.setItem('bba-records', JSON.stringify(records)); } catch (e) {}
+  }
+  function recText(id) { const r = recordOf(id); return r.w + 'W-' + r.l + 'L'; }
+
   // ------------------------------------------------------------------ sound
 
   let audio = null; // created on first FIGHT click (browsers block audio before a gesture)
@@ -209,9 +309,9 @@
     if (audio.state === 'suspended') audio.resume();
   }
 
-  function tone(freq, endFreq, dur, type, vol) {
+  function tone(freq, endFreq, dur, type, vol, dest, when) {
     if (!audio) return;
-    const t = audio.currentTime;
+    const t = when || audio.currentTime;
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     osc.type = type;
@@ -219,14 +319,14 @@
     osc.frequency.exponentialRampToValueAtTime(Math.max(1, endFreq), t + dur);
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(gain).connect(audio.destination);
+    osc.connect(gain).connect(dest || audio.destination);
     osc.start(t);
     osc.stop(t + dur);
   }
 
-  function noise(dur, vol, filterFreq, filterType) {
+  function noise(dur, vol, filterFreq, filterType, dest, when) {
     if (!audio) return;
-    const t = audio.currentTime;
+    const t = when || audio.currentTime;
     const len = Math.ceil(audio.sampleRate * dur);
     const buf = audio.createBuffer(1, len, audio.sampleRate);
     const data = buf.getChannelData(0);
@@ -239,7 +339,7 @@
     const gain = audio.createGain();
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(filt).connect(gain).connect(audio.destination);
+    src.connect(filt).connect(gain).connect(dest || audio.destination);
     src.start(t);
   }
 
@@ -260,6 +360,18 @@
       tone(110, 35, 0.3, 'sine', 0.45);
       noise(0.12, 0.25, 600, 'lowpass');
     },
+    spear() { // sharp piercing tick
+      noise(0.08, 0.2, 6500, 'highpass');
+      tone(800, 480, 0.07, 'triangle', 0.12);
+    },
+    punch() { // meaty mid thud
+      tone(230, 70, 0.12, 'square', 0.18);
+      noise(0.08, 0.2, 900, 'lowpass');
+    },
+    grab() { // suction snatch
+      tone(600, 140, 0.2, 'sawtooth', 0.12);
+      noise(0.15, 0.12, 1500, 'bandpass');
+    },
     cast() { // rising power-up sweep when a special fires
       tone(280, 950, 0.28, 'sawtooth', 0.1);
       tone(140, 500, 0.3, 'square', 0.07);
@@ -268,30 +380,136 @@
       noise(0.22, 0.18, 2500, 'bandpass');
       tone(950, 320, 0.3, 'sawtooth', 0.09);
     },
-    slam() { // seismic slam detonation
+    slam() { // seismic slam / wall-slam detonation
       tone(75, 24, 0.5, 'sine', 0.55);
       noise(0.35, 0.3, 380, 'lowpass');
     },
-    whoosh() { // hammer hurled through the air
+    whoosh() { // weapon hurled through the air
       noise(0.3, 0.18, 1200, 'bandpass');
     },
   };
+
+  // ------------------------------------------------------------------ music
+  // Synthesized cyberpunk loop: four-on-the-floor kick, snappy snare, hats,
+  // a driving detuned saw bassline in A minor, and a sparse neon arp lead.
+  // Scheduled with a 25ms lookahead timer against the audio clock.
+
+  const BPM = 126;
+  const STEP = 60 / BPM / 2; // 8th notes
+  const A1 = 55, G1 = 49, C2 = 65.41, D2 = 73.42, E2 = 82.41;
+  const A3 = 220, C4 = 261.63, D4 = 293.66, E4 = 329.63, G4 = 392;
+  const bassPat = [
+    A1, A1, A1, A1, A1, A1, G1, A1,
+    A1, A1, A1, A1, C2, C2, D2, E2,
+    C2, C2, C2, C2, C2, C2, G1, C2,
+    G1, G1, G1, G1, E2, D2, C2, G1,
+  ];
+  const leadPat = {
+    1: A3, 3: C4, 5: E4, 11: D4,
+    17: C4, 19: E4, 21: G4, 27: E4, 29: D4,
+  };
+
+  const music = {
+    enabled: true, playing: false, timer: null, step: 0, nextTime: 0, gain: null,
+    start() {
+      if (!audio || this.playing || !this.enabled) return;
+      if (!this.gain) {
+        this.gain = audio.createGain();
+        this.gain.gain.value = 0.5;
+        this.gain.connect(audio.destination);
+      }
+      this.playing = true;
+      this.step = 0;
+      this.nextTime = audio.currentTime + 0.06;
+      this.timer = setInterval(() => this.tick(), 25);
+    },
+    stop() {
+      clearInterval(this.timer);
+      this.playing = false;
+    },
+    tick() {
+      while (this.nextTime < audio.currentTime + 0.12) {
+        this.schedule(this.step, this.nextTime);
+        this.step = (this.step + 1) % 32;
+        this.nextTime += STEP;
+      }
+    },
+    schedule(s, t) {
+      const g = this.gain;
+      // kick: four on the floor
+      if (s % 2 === 0) tone(130, 38, 0.16, 'sine', 0.5, g, t);
+      // snare on beats 2 and 4
+      if (s % 8 === 2 || s % 8 === 6) noise(0.12, 0.25, 1800, 'highpass', g, t);
+      // hats: tick every 8th, open hat shimmer on offbeats
+      noise(0.03, s % 2 ? 0.1 : 0.05, 8000, 'highpass', g, t);
+      if (s % 4 === 3) noise(0.1, 0.06, 9000, 'highpass', g, t);
+      // detuned saw bass pluck
+      const f = bassPat[s];
+      tone(f, f, STEP * 0.9, 'sawtooth', 0.16, g, t);
+      tone(f * 1.007, f * 1.007, STEP * 0.9, 'sawtooth', 0.1, g, t);
+      tone(f / 2, f / 2, STEP * 0.9, 'square', 0.07, g, t);
+      // neon arp lead
+      const lead = leadPat[s];
+      if (lead) {
+        tone(lead, lead, STEP * 1.6, 'square', 0.05, g, t);
+        tone(lead * 2.003, lead * 2.003, STEP * 1.6, 'sawtooth', 0.025, g, t);
+      }
+    },
+  };
+
+  musicBtn.addEventListener('click', () => {
+    music.enabled = !music.enabled;
+    musicBtn.textContent = '♫ MUSIC ' + (music.enabled ? 'ON' : 'OFF');
+    musicBtn.classList.toggle('on', music.enabled);
+    if (!music.enabled) music.stop();
+    else if (audio) music.start();
+  });
+
+  // -------------------------------------------------------------- announcer
+
+  function say(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      u.pitch = 0.6; // big boomy announcer voice
+      u.volume = 1;
+      window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
 
   // --------------------------------------------------------------- specials
   // Each ball carries 3 weapon-themed specials. They charge over time, the AI
   // casts them when full (and the enemy is in the right range band), then the
   // meter empties and recharges — that recharge is the cooldown.
+  // Special hits BYPASS the normal post-hit invulnerability window (they only
+  // apply it), otherwise close-range specials like Seismic Slam whiff against
+  // a target that was just tagged by a melee swing.
 
   function specialDefs(weapon) {
-    return weapon === 'sword' ? [
-      { key: 'whirlwind', name: 'WHIRLWIND',     charge: 9,  range: [0, 260] },
-      { key: 'lunge',     name: 'BLADE RUSH',    charge: 7,  range: [240, 9999] },
-      { key: 'beam',      name: 'CRESCENT WAVE', charge: 12, range: [300, 9999] },
-    ] : [
-      { key: 'slam',  name: 'SEISMIC SLAM', charge: 10, range: [0, 210] },
-      { key: 'throw', name: 'HAMMER HURL',  charge: 12, range: [280, 9999] },
-      { key: 'rage',  name: 'TITAN RAGE',   charge: 9,  range: [0, 9999] },
-    ];
+    switch (weapon) {
+      case 'sword': return [
+        { key: 'whirlwind', name: 'WHIRLWIND',     charge: 9,  range: [0, 260] },
+        { key: 'lunge',     name: 'BLADE RUSH',    charge: 7,  range: [240, 9999] },
+        { key: 'beam',      name: 'CRESCENT WAVE', charge: 12, range: [300, 9999] },
+      ];
+      case 'hammer': return [
+        { key: 'slam',  name: 'SEISMIC SLAM', charge: 10, range: [0, 210] },
+        { key: 'throw', name: 'HAMMER HURL',  charge: 12, range: [280, 9999] },
+        { key: 'rage',  name: 'TITAN RAGE',   charge: 9,  range: [0, 9999] },
+      ];
+      case 'spear': return [
+        { key: 'skewer',  name: 'SKEWER STORM',   charge: 8,  range: [0, 300] },
+        { key: 'javelin', name: 'JAVELIN TOSS',   charge: 11, range: [280, 9999] },
+        { key: 'drive',   name: 'PIERCING DRIVE', charge: 7,  range: [240, 9999] },
+      ];
+      case 'hands': return [
+        { key: 'flurry',  name: 'FIST FLURRY',   charge: 8,  range: [0, 260] },
+        { key: 'megaton', name: 'MEGATON PUNCH', charge: 9,  range: [220, 9999] },
+        { key: 'vortex',  name: 'VORTEX GRIP',   charge: 11, range: [140, 520] },
+      ];
+    }
   }
 
   function castSpecial(b, foe, s) {
@@ -300,11 +518,17 @@
     const aim = Math.atan2(foe.y - b.y, foe.x - b.x);
     switch (s.key) {
       case 'whirlwind': // sword spins wildly, raking the enemy with rapid cuts
-        b.activeSpecial = { key: s.key, t: 1.8 };
+      case 'flurry':    // fists become a blur of jabs
+        b.activeSpecial = { key: s.key, t: 1.7, elapsed: 0 };
         break;
-      case 'lunge': // dash at the enemy, blade-first
-        b.vx = Math.cos(aim) * 760;
-        b.vy = Math.sin(aim) * 760;
+      case 'skewer': // spear pistons in and out with rapid thrusts
+        b.activeSpecial = { key: s.key, t: 1.6, elapsed: 0 };
+        break;
+      case 'lunge':   // dash at the enemy, blade-first
+      case 'drive':   // spear-first piercing charge
+      case 'megaton': // rocket punch dash
+        b.vx = Math.cos(aim) * (s.key === 'drive' ? 820 : 770);
+        b.vy = Math.sin(aim) * (s.key === 'drive' ? 820 : 770);
         b.activeSpecial = { key: s.key, t: 0.65 };
         break;
       case 'beam': // launch a flying crescent of sword energy
@@ -319,18 +543,26 @@
       case 'slam': // wind up, then blast an expanding shockwave
         b.activeSpecial = { key: s.key, t: 1.1, dur: 1.1, windup: 0.55, fired: false };
         break;
-      case 'throw': // hurl the hammer; it comes back boomerang-style
-        b.hammerOut = true;
+      case 'throw':   // hurl the hammer; it comes back boomerang-style
+      case 'javelin': // pitch the spear like a javelin, then recall it
+        b.weaponOut = true;
         projectiles.push({
-          type: 'hammer',
+          type: 'thrown', weapon: b.weapon,
           x: b.x, y: b.y,
-          vx: Math.cos(aim) * 430, vy: Math.sin(aim) * 430,
-          owner: b, dmg: 16, knock: 480, spin: 0, t: 0, phase: 'out',
+          vx: Math.cos(aim) * (s.key === 'javelin' ? 660 : 460),
+          vy: Math.sin(aim) * (s.key === 'javelin' ? 660 : 460),
+          owner: b, dmg: s.key === 'javelin' ? 14 : 16,
+          knock: s.key === 'javelin' ? 380 : 480,
+          spin: aim, t: 0, phase: 'out',
         });
         sfx.whoosh();
         break;
       case 'rage': // hammer grows huge: bonus damage, reach and knockback
         b.activeSpecial = { key: s.key, t: 3.0 };
+        break;
+      case 'vortex': // magnetic palm drags the enemy in for an empowered slam
+        b.activeSpecial = { key: s.key, t: 1.4 };
+        b.empowerT = 2.4; // empowered grab window
         break;
     }
   }
@@ -339,7 +571,7 @@
     // charge meters
     for (const s of b.specials) {
       if (s.timer < s.charge) { s.timer += dt; continue; }
-      if (b.activeSpecial || b.hammerOut) continue;
+      if (b.activeSpecial || b.weaponOut || b.grab || b.grabbedBy) continue;
       const dist = Math.hypot(foe.x - b.x, foe.y - b.y);
       // ready: fire when the enemy is in this move's range band (small random
       // delay so the two balls don't cast in lockstep)
@@ -349,19 +581,22 @@
       }
     }
 
+    b.empowerT = Math.max(0, (b.empowerT || 0) - dt);
+
     // active special effects
     const a = b.activeSpecial;
     if (!a) return;
     a.t -= dt;
-    if (a.key === 'lunge') {
-      b.wAngle = Math.atan2(foe.y - b.y, foe.x - b.x); // blade locked on target
+    if (a.elapsed !== undefined) a.elapsed += dt;
+    if (a.key === 'lunge' || a.key === 'drive' || a.key === 'megaton') {
+      b.wAngle = Math.atan2(foe.y - b.y, foe.x - b.x); // weapon locked on target
       ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
                     r: b.r, wLen: b.wLen, color: b.color, body: true,
                     life: 0.22, max: 0.22 });
     }
-    if (a.key === 'whirlwind') {
+    if (a.key === 'whirlwind' || a.key === 'flurry' || a.key === 'skewer') {
       ghosts.push({ x: b.x, y: b.y, wAngle: b.wAngle, weapon: b.weapon,
-                    r: b.r, wLen: b.wLen, color: b.color, body: false,
+                    r: b.r, wLen: effectiveReach(b), color: b.color, body: false,
                     life: 0.18, max: 0.18 });
     }
     if (a.key === 'slam' && !a.fired && a.dur - a.t >= a.windup) {
@@ -380,10 +615,35 @@
         color: '#ff7b3b', text: null,
       });
     }
+    if (a.key === 'vortex') {
+      // drag the enemy toward Kurt's waiting palm
+      if (!foe.grabbedBy) {
+        const dx = b.x - foe.x, dy = b.y - foe.y;
+        const d = Math.hypot(dx, dy) || 1;
+        foe.vx += (dx / d) * 700 * dt;
+        foe.vy += (dy / d) * 700 * dt;
+      }
+      if (Math.random() < dt * 30) {
+        // purple energy streaming from the enemy into the vortex
+        const mx = foe.x + (b.x - foe.x) * Math.random();
+        const my = foe.y + (b.y - foe.y) * Math.random();
+        particles.push({ x: mx, y: my, vx: (b.x - mx) * 2, vy: (b.y - my) * 2,
+                         life: 0.3, max: 0.3, size: 2.5, color: '#c08cff', text: null });
+      }
+    }
     if (a.t <= 0) b.activeSpecial = null;
   }
 
-  // shared hit application for projectiles and shockwaves
+  // current weapon reach, accounting for active specials
+  function effectiveReach(b) {
+    const a = b.activeSpecial;
+    if (!a) return b.wLen;
+    if (a.key === 'rage') return b.wLen * 1.25;
+    if (a.key === 'skewer') return b.wLen * (0.7 + 0.5 * Math.abs(Math.sin(a.elapsed * 12)));
+    return b.wLen;
+  }
+
+  // shared hit application — bypasses the invuln window, then re-applies it
   function dealHit(def, dmg, fromX, fromY, knock, color, shakeAmt) {
     def.hp = Math.max(0, def.hp - dmg);
     def.cooldown = HIT_COOLDOWN;
@@ -408,37 +668,37 @@
           particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.2, max: 0.2,
                            size: 2.5, color: '#9fdcff', text: null });
         }
-        if (foe.cooldown <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 16) {
+        if (!foe.grabbedBy && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 16) {
           dealHit(foe, p.dmg, p.x, p.y, p.knock, '#9fdcff', 7);
           sfx.sword();
           p.life = 0;
         }
         if (p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) p.life = 0;
         p.dead = p.life <= 0;
-      } else if (p.type === 'hammer') {
+      } else if (p.type === 'thrown') {
         p.t += dt;
-        p.spin += 14 * dt;
+        p.spin += (p.weapon === 'hammer' ? 14 : 11) * dt;
         const target = p.phase === 'out' ? foe : p.owner;
-        // steer toward the target (gentle homing out, hard homing back)
+        // steer toward the target (homing out, hard homing back)
         const ax = target.x - p.x, ay = target.y - p.y;
         const ad = Math.hypot(ax, ay) || 1;
-        const steer = p.phase === 'out' ? 600 : 1500;
+        const steer = p.phase === 'out' ? 950 : 1600;
         p.vx += (ax / ad) * steer * dt;
         p.vy += (ay / ad) * steer * dt;
         const sp = Math.hypot(p.vx, p.vy) || 1;
-        const cap = 480;
+        const cap = p.weapon === 'spear' ? 660 : 560;
         if (sp > cap) { p.vx = p.vx / sp * cap; p.vy = p.vy / sp * cap; }
         p.x += p.vx * dt; p.y += p.vy * dt;
         if (p.phase === 'out') {
-          if (foe.cooldown <= 0 && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 18) {
+          if (!foe.grabbedBy && Math.hypot(foe.x - p.x, foe.y - p.y) < foe.r + 22) {
             dealHit(foe, p.dmg, p.x, p.y, p.knock, '#ffb347', 10);
-            sfx.hammer();
+            if (p.weapon === 'hammer') sfx.hammer(); else sfx.spear();
             p.phase = 'back';
-          } else if (p.t > 0.9) {
+          } else if (p.t > 1.2) {
             p.phase = 'back';
           }
         } else if (Math.hypot(p.owner.x - p.x, p.owner.y - p.y) < p.owner.r) {
-          p.owner.hammerOut = false; // caught it
+          p.owner.weaponOut = false; // caught it
           p.dead = true;
         }
       }
@@ -448,10 +708,11 @@
     for (const s of shockwaves) {
       s.r += 420 * dt;
       const foe = s.owner === balls[0] ? balls[1] : balls[0];
-      if (!s.hit && foe.cooldown <= 0 &&
+      if (!s.hit && !foe.grabbedBy &&
           Math.hypot(foe.x - s.x, foe.y - s.y) < s.r + foe.r) {
         s.hit = true;
         dealHit(foe, s.dmg, s.x, s.y, s.knock, '#ffb347', 12);
+        sfx.hammer();
       }
       s.dead = s.r >= s.max;
     }
@@ -463,59 +724,41 @@
 
   // ---------------------------------------------------------------- fighters
 
-  function makeBalls() {
-    return [
-      { // Swordball: fast spin, long reach, lighter hits
-        name: 'SWORDBALL',
-        color: '#4da6ff', dark: '#2f7fd6',
-        x: W * 0.25, y: H * 0.5,
-        vx: 170, vy: -130,
-        r: 32,
-        cruise: 210,           // speed the ball settles back to
-        hp: MAX_HP,
-        weapon: 'sword',
-        wLen: 78,              // weapon reach beyond ball edge
-        wAngle: 0,
-        wSpin: 3.4,            // radians / second
-        dmg: 8,
-        knock: 260,            // knockback impulse dealt to the victim
-        hitFlash: 0,           // victim flash timer
-        cooldown: 0,           // can't be damaged while > 0
-        specials: specialDefs('sword').map(s => ({ ...s, timer: 0 })),
-        activeSpecial: null,
-        hammerOut: false,
-        hpEl: document.getElementById('hp1'),
-        hpText: document.getElementById('hp1-text'),
-        spWrap: document.getElementById('sp-left'),
-      },
-      { // Hammerball: slow spin, shorter reach, heavy hits that smash you into walls
-        name: 'HAMMERBALL',
-        color: '#ff5e5e', dark: '#d63a3a',
-        x: W * 0.75, y: H * 0.5,
-        vx: -150, vy: 140,
-        r: 32,
-        cruise: 190,
-        hp: MAX_HP,
-        weapon: 'hammer',
-        wLen: 58,
-        wAngle: Math.PI,
-        wSpin: -2.1,
-        dmg: 14,
-        knock: 420,
-        hitFlash: 0,
-        cooldown: 0,
-        specials: specialDefs('hammer').map(s => ({ ...s, timer: 0 })),
-        activeSpecial: null,
-        hammerOut: false,
-        hpEl: document.getElementById('hp2'),
-        hpText: document.getElementById('hp2-text'),
-        spWrap: document.getElementById('sp-right'),
-      },
-    ];
+  function makeBall(charId, side) {
+    const c = charById(charId);
+    return {
+      ...c,
+      x: side === 0 ? W * 0.25 : W * 0.75,
+      y: H * 0.5,
+      vx: side === 0 ? 170 : -150,
+      vy: side === 0 ? -130 : 140,
+      r: 32,
+      hp: MAX_HP,
+      wAngle: side === 0 ? 0 : Math.PI,
+      specials: specialDefs(c.weapon).map(s => ({ ...s, timer: 0 })),
+      activeSpecial: null,
+      weaponOut: false,
+      grab: null,       // { foe, t } while holding someone
+      grabbedBy: null,  // set on the victim while held
+      grabCd: 0,
+      empowerT: 0,
+      slamArmed: 0,     // wall-slam damage window after being thrown
+      slamDmg: 0,
+      slamBy: null,
+      hitFlash: 0,
+      cooldown: 0,
+      hpEl: document.getElementById('hp' + (side + 1)),
+      hpText: document.getElementById('hp' + (side + 1) + '-text'),
+      nameEl: document.getElementById('name' + (side + 1)),
+      recEl: document.getElementById('rec' + (side + 1)),
+      statsEl: document.getElementById('stats' + (side + 1)),
+      spWrap: document.getElementById(side === 0 ? 'sp-left' : 'sp-right'),
+    };
   }
 
-  function reset() {
-    balls = makeBalls();
+  function setupFight(id1, id2) {
+    balls = [makeBall(id1, 0), makeBall(id2, 1)];
+    if (id1 === id2) balls[1].name += ' II'; // mirror match
     particles = [];
     projectiles = [];
     shockwaves = [];
@@ -524,6 +767,11 @@
     shake = 0;
     winner = null;
     for (const b of balls) {
+      b.nameEl.textContent = b.name;
+      b.nameEl.style.color = b.color;
+      b.recEl.textContent = recText(b.id);
+      b.statsEl.innerHTML = b.tag.map(t => '<span>' + t + '</span>').join('');
+      b.hpEl.style.background = 'linear-gradient(90deg, ' + b.dark + ', ' + b.color + ')';
       b.spWrap.innerHTML = '';
       b.spEls = b.specials.map(s => {
         const div = document.createElement('div');
@@ -531,7 +779,9 @@
         div.innerHTML = '<div class="label">' + s.name +
                         '</div><div class="meter"><div class="mfill"></div></div>';
         b.spWrap.appendChild(div);
-        return { root: div, fill: div.querySelector('.mfill') };
+        const fill = div.querySelector('.mfill');
+        fill.style.background = b.color;
+        return { root: div, fill };
       });
     }
     updateHud();
@@ -542,6 +792,13 @@
 
   function update(dt) {
     for (const b of balls) {
+      b.cooldown = Math.max(0, b.cooldown - dt);
+      b.hitFlash = Math.max(0, b.hitFlash - dt);
+      b.grabCd = Math.max(0, b.grabCd - dt);
+      b.slamArmed = Math.max(0, b.slamArmed - dt);
+
+      if (b.grabbedBy) continue; // pinned to the grabber's palm, no physics
+
       // move
       b.x += b.vx * dt;
       b.y += b.vy * dt;
@@ -554,7 +811,20 @@
       if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
       if (hitWall) {
         b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
-        sfx.wall(Math.hypot(b.vx, b.vy));
+        if (b.slamArmed > 0) {
+          // thrown by Kurt: the wall is the weapon
+          b.hp = Math.max(0, b.hp - b.slamDmg);
+          b.hitFlash = 0.3;
+          spawnSparks(b.x, b.y, '#c08cff', 20, 360);
+          spawnDamageText(b.x, b.y - b.r - 8, '-' + b.slamDmg,
+                          b.slamBy ? b.slamBy.color : '#c08cff');
+          sfx.slam();
+          shake = 13;
+          b.slamArmed = 0;
+          updateHud();
+        } else {
+          sfx.wall(Math.hypot(b.vx, b.vy));
+        }
       }
 
       // ease speed back toward cruise speed after knockbacks
@@ -564,12 +834,39 @@
       b.vy = b.vy / sp * target;
 
       // the weapon is the only thing that animates on the ball: spin it
-      // (whirlwind sends the sword into overdrive)
-      const spinMult = b.activeSpecial && b.activeSpecial.key === 'whirlwind' ? 4.5 : 1;
+      // (whirlwind / flurry send it into overdrive)
+      const ak = b.activeSpecial ? b.activeSpecial.key : null;
+      const spinMult = (ak === 'whirlwind' || ak === 'flurry') ? 4.5 : 1;
       b.wAngle += b.wSpin * spinMult * dt;
+    }
 
-      b.cooldown = Math.max(0, b.cooldown - dt);
-      b.hitFlash = Math.max(0, b.hitFlash - dt);
+    // grabs: hold the victim at the palm, then hurl them along our heading
+    for (const b of balls) {
+      if (!b.grab) continue;
+      const g = b.grab;
+      g.t -= dt;
+      const pa = b.wAngle + Math.PI; // palm side
+      g.foe.x = b.x + Math.cos(pa) * (b.r + b.wLen + g.foe.r * 0.6);
+      g.foe.y = b.y + Math.sin(pa) * (b.r + b.wLen + g.foe.r * 0.6);
+      g.foe.x = Math.max(g.foe.r, Math.min(W - g.foe.r, g.foe.x));
+      g.foe.y = Math.max(g.foe.r, Math.min(H - g.foe.r, g.foe.y));
+      if (g.t <= 0) {
+        // release: throw along Kurt's trajectory
+        const spd = Math.hypot(b.vx, b.vy);
+        let dx, dy;
+        if (spd > 40) { dx = b.vx / spd; dy = b.vy / spd; }
+        else { dx = Math.cos(pa); dy = Math.sin(pa); }
+        const power = g.empowered ? 1150 : 950;
+        g.foe.vx = dx * power;
+        g.foe.vy = dy * power;
+        g.foe.slamArmed = 1.2;
+        g.foe.slamDmg = g.empowered ? 16 : 12;
+        g.foe.slamBy = b;
+        g.foe.grabbedBy = null;
+        b.grab = null;
+        b.grabCd = 5;
+        sfx.whoosh();
+      }
     }
 
     updateSpecials(balls[0], balls[1], dt);
@@ -601,13 +898,14 @@
       if (balls[i].hp <= 0 && !winner) {
         balls[i].hp = 0;
         winner = balls[1 - i];
-        endFight();
+        endFight(balls[i]);
       }
     }
   }
 
   // balls shove each other: elastic bounce that can smack them into walls
   function bodyCollision(a, b) {
+    if (a.grabbedBy || b.grabbedBy || a.grab || b.grab) return;
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.hypot(dx, dy);
     const minDist = a.r + b.r;
@@ -635,55 +933,94 @@
     spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, '#cfd6ff', 5, 120);
   }
 
-  // weapon of `att` hitting the body of `def`
+  // the striking segments a fighter presents: most have one weapon arm,
+  // Kurt has a fist on one side and an open grabbing palm on the other
+  function segmentsOf(att) {
+    const reach = effectiveReach(att);
+    if (att.weapon === 'hands') {
+      return [
+        { angle: att.wAngle, reach, kind: 'fist' },
+        { angle: att.wAngle + Math.PI, reach, kind: 'palm' },
+      ];
+    }
+    return [{ angle: att.wAngle, reach, kind: 'weapon' }];
+  }
+
+  // weapons of `att` hitting the body of `def`
   function weaponHit(att, def) {
-    if (def.cooldown > 0) return;
-    if (att.hammerOut) return; // hammer is mid-flight, nothing to swing
+    if (att.weaponOut) return;            // weapon is mid-flight
+    if (att.grab || att.grabbedBy || def.grabbedBy) return; // grapple in progress
+    if (def.hp <= 0) return;
 
-    // specials modify the strike
     const spec = att.activeSpecial ? att.activeSpecial.key : null;
-    let dmg = att.dmg, knock = att.knock, victimCd = HIT_COOLDOWN;
-    let reach = att.wLen;
-    if (spec === 'whirlwind') { dmg = 4; victimCd = 0.3; }          // rapid weak cuts
-    if (spec === 'lunge')     { dmg = 15; knock = 540; }            // skewering dash
-    if (spec === 'rage')      { dmg = att.dmg + 6; knock = att.knock + 220; reach = att.wLen * 1.25; }
 
-    // weapon is a segment from the ball edge out to the tip
-    const cos = Math.cos(att.wAngle), sin = Math.sin(att.wAngle);
-    const x1 = att.x + cos * att.r;
-    const y1 = att.y + sin * att.r;
-    const x2 = att.x + cos * (att.r + reach);
-    const y2 = att.y + sin * (att.r + reach);
+    for (const seg of segmentsOf(att)) {
+      const cos = Math.cos(seg.angle), sin = Math.sin(seg.angle);
+      const x1 = att.x + cos * att.r;
+      const y1 = att.y + sin * att.r;
+      const x2 = att.x + cos * (att.r + seg.reach);
+      const y2 = att.y + sin * (att.r + seg.reach);
 
-    // closest point on segment to defender center
-    const ex = x2 - x1, ey = y2 - y1;
-    const len2 = ex * ex + ey * ey;
-    let t = ((def.x - x1) * ex + (def.y - y1) * ey) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const px = x1 + ex * t, py = y1 + ey * t;
-    const dist = Math.hypot(def.x - px, def.y - py);
+      // closest point on segment to defender center
+      const ex = x2 - x1, ey = y2 - y1;
+      const len2 = ex * ex + ey * ey || 1;
+      let t = ((def.x - x1) * ex + (def.y - y1) * ey) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const px = x1 + ex * t, py = y1 + ey * t;
+      const dist = Math.hypot(def.x - px, def.y - py);
 
-    const blade = (att.weapon === 'hammer' ? 14 : 6) * (spec === 'rage' ? 1.5 : 1);
-    if (dist > def.r + blade) return;
+      let thick = att.weapon === 'hammer' ? 14 : att.weapon === 'hands' ? 12 : 6;
+      if (spec === 'rage') thick *= 1.5;
+      if (dist > def.r + thick) continue;
 
-    // --- HIT! ---
-    def.hp = Math.max(0, def.hp - dmg);
-    def.cooldown = victimCd;
-    def.hitFlash = 0.25;
+      // --- CONTACT ---
+      if (seg.kind === 'palm') {
+        // open palm: grab, then wall-slam along Kurt's trajectory
+        if (att.grabCd <= 0 && !att.grab) {
+          att.grab = { foe: def, t: 0.55, empowered: att.empowerT > 0 };
+          def.grabbedBy = att;
+          def.cooldown = Math.max(def.cooldown, 0.3);
+          sfx.grab();
+          spawnSparks(px, py, '#c08cff', 10, 200);
+          if (att.grab.empowered) att.empowerT = 0;
+        }
+        continue;
+      }
 
-    // knockback: shove the defender away — can bounce them into walls
-    let kx = def.x - px, ky = def.y - py;
-    const kd = Math.hypot(kx, ky) || 1;
-    def.vx += (kx / kd) * knock;
-    def.vy += (ky / kd) * knock;
+      if (def.cooldown > 0) continue;
 
-    if (att.weapon === 'hammer') sfx.hammer(); else sfx.sword();
-    spawnSparks(px, py, att.weapon === 'hammer' ? '#ffb347' : '#fff27a',
-                att.weapon === 'hammer' ? 16 : 10,
-                att.weapon === 'hammer' ? 320 : 220);
-    spawnDamageText(def.x, def.y - def.r - 8, '-' + dmg, att.color);
-    shake = spec ? 11 : (att.weapon === 'hammer' ? 9 : 5);
-    updateHud();
+      // specials modify the strike
+      let dmg = att.dmg, knock = att.knock, victimCd = HIT_COOLDOWN;
+      if (spec === 'whirlwind' || spec === 'flurry') { dmg = 4; victimCd = 0.3; }
+      if (spec === 'skewer')  { dmg = 5; victimCd = 0.28; }
+      if (spec === 'lunge')   { dmg = 15; knock = 540; }
+      if (spec === 'drive')   { dmg = 16; knock = 520; }
+      if (spec === 'megaton') { dmg = 17; knock = 680; }
+      if (spec === 'rage')    { dmg = att.dmg + 6; knock = att.knock + 220; }
+
+      def.hp = Math.max(0, def.hp - dmg);
+      def.cooldown = victimCd;
+      def.hitFlash = 0.25;
+
+      // knockback: shove the defender away — can bounce them into walls
+      let kx = def.x - px, ky = def.y - py;
+      const kd = Math.hypot(kx, ky) || 1;
+      def.vx += (kx / kd) * knock;
+      def.vy += (ky / kd) * knock;
+
+      if (att.weapon === 'hammer') sfx.hammer();
+      else if (att.weapon === 'spear') sfx.spear();
+      else if (att.weapon === 'hands') sfx.punch();
+      else sfx.sword();
+      const sparkColor = att.weapon === 'hammer' ? '#ffb347'
+                       : att.weapon === 'hands' ? '#e6a3ff'
+                       : att.weapon === 'spear' ? '#bdf5c9' : '#fff27a';
+      spawnSparks(px, py, sparkColor, att.weapon === 'hammer' ? 16 : 10,
+                  att.weapon === 'hammer' ? 320 : 220);
+      spawnDamageText(def.x, def.y - def.r - 8, '-' + dmg, att.color);
+      shake = spec ? 11 : (att.weapon === 'hammer' ? 9 : 5);
+      updateHud();
+    }
   }
 
   // --------------------------------------------------------------- particles
@@ -724,6 +1061,8 @@
     ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H);
     ctx.stroke();
 
+    if (!balls) { ctx.restore(); return; }
+
     // afterimage ghosts trail behind dashes and whirlwinds
     for (const g of ghosts) {
       ctx.save();
@@ -736,7 +1075,7 @@
       }
       ctx.translate(g.x, g.y);
       ctx.rotate(g.wAngle);
-      if (g.weapon === 'sword') drawSword(g); else drawHammer(g);
+      drawWeapon(g);
       ctx.restore();
     }
 
@@ -756,6 +1095,22 @@
       ctx.lineWidth = 3 * fade + 1;
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r * 0.82, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // grab tether
+    for (const b of balls) {
+      if (!b.grab) continue;
+      ctx.save();
+      ctx.strokeStyle = '#c08cff';
+      ctx.shadowColor = '#c08cff';
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 4;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.grab.foe.x, b.grab.foe.y);
       ctx.stroke();
       ctx.restore();
     }
@@ -780,7 +1135,7 @@
         ctx.beginPath();
         ctx.arc(-8, 0, 17, -0.8, 0.8);
         ctx.stroke();
-      } else { // spinning thrown hammer
+      } else if (p.weapon === 'hammer') { // spinning thrown hammer
         ctx.rotate(p.spin);
         ctx.shadowColor = '#ffb347';
         ctx.shadowBlur = 12;
@@ -796,6 +1151,17 @@
         ctx.lineWidth = 2;
         roundRect(12, -16, 24, 32, 5);
         ctx.stroke();
+      } else { // hurled javelin, pointing along its flight
+        ctx.rotate(Math.atan2(p.vy, p.vx));
+        ctx.shadowColor = '#5ee68a';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#9a6a33';
+        ctx.fillRect(-34, -2.5, 56, 5);
+        ctx.fillStyle = '#e8eef7';
+        ctx.beginPath();
+        ctx.moveTo(22, 0); ctx.lineTo(30, -6); ctx.lineTo(40, 0); ctx.lineTo(30, 6);
+        ctx.closePath();
+        ctx.fill();
       }
       ctx.restore();
     }
@@ -853,7 +1219,7 @@
     }
 
     // weapon first so it sits "behind" the ball at the hilt
-    if (!b.hammerOut) {
+    if (!b.weaponOut) {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(b.wAngle);
@@ -861,8 +1227,7 @@
         ctx.shadowColor = '#ff3b3b';
         ctx.shadowBlur = 18;
       }
-      if (b.weapon === 'sword') drawSword(b);
-      else drawHammer(b, spec === 'rage' ? 1.45 : 1);
+      drawWeapon(b, spec === 'rage' ? 1.45 : 1);
       ctx.restore();
     }
 
@@ -906,7 +1271,14 @@
     ctx.stroke();
   }
 
-  // drawn in local space: +x points along the weapon, ball edge at x = r
+  // dispatch by weapon type; drawn in local space, +x along the weapon arm
+  function drawWeapon(b, s = 1) {
+    if (b.weapon === 'sword') drawSword(b);
+    else if (b.weapon === 'hammer') drawHammer(b, s);
+    else if (b.weapon === 'spear') drawSpear(b);
+    else drawHands(b);
+  }
+
   function drawSword(b) {
     const r = b.r, L = b.wLen;
     // hilt
@@ -958,6 +1330,77 @@
     ctx.stroke();
   }
 
+  function drawSpear(b) {
+    const r = b.r, L = b.wLen;
+    // shaft
+    ctx.fillStyle = '#9a6a33';
+    ctx.fillRect(r - 6, -2.5, L - 12, 5);
+    // binding
+    ctx.fillStyle = '#c9a227';
+    ctx.fillRect(r + L - 22, -4, 6, 8);
+    // leaf-shaped tip
+    const g = ctx.createLinearGradient(r + L - 16, 0, r + L, 0);
+    g.addColorStop(0, '#e8eef7');
+    g.addColorStop(1, '#9fb4cc');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(r + L - 16, 0);
+    ctx.lineTo(r + L - 7, -6.5);
+    ctx.lineTo(r + L, 0);
+    ctx.lineTo(r + L - 7, 6.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Kurt: fist on the +x arm, open grabbing palm on the opposite arm
+  function drawHands(b) {
+    const r = b.r, L = b.wLen;
+    // fist arm
+    ctx.strokeStyle = '#7a57a8';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(r - 4, 0);
+    ctx.lineTo(r + L - 8, 0);
+    ctx.stroke();
+    // boxing-glove fist
+    ctx.fillStyle = '#e05555';
+    ctx.beginPath();
+    ctx.arc(r + L, 0, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#a83232';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // knuckle line
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(r + L + 3, 0, 7, -1.2, 1.2);
+    ctx.stroke();
+
+    // palm arm (glows when the grab is ready)
+    ctx.save();
+    ctx.rotate(Math.PI);
+    if (b.grabCd !== undefined && b.grabCd <= 0) {
+      ctx.shadowColor = '#6de0e0';
+      ctx.shadowBlur = 12;
+    }
+    ctx.strokeStyle = '#7a57a8';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(r - 4, 0);
+    ctx.lineTo(r + L - 10, 0);
+    ctx.stroke();
+    // open palm with fingers
+    ctx.fillStyle = '#6de0e0';
+    roundRect(r + L - 14, -10, 12, 20, 4);
+    ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      roundRect(r + L - 2, -10 + i * 5.2, 9, 3.7, 1.8);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function roundRect(x, y, w, h, rad) {
     ctx.beginPath();
     ctx.moveTo(x + rad, y);
@@ -988,23 +1431,86 @@
     }
   }
 
-  function endFight() {
-    running = false;
-    overlayTitle.textContent = winner.name + ' WINS!';
-    overlayTitle.style.color = winner.color;
-    overlaySub.textContent = (winner === balls[0] ? balls[1].name : balls[0].name) +
-      ' was knocked out at 0 HP.';
-    playBtn.textContent = 'REMATCH';
+  // -------------------------------------------------------- character select
+
+  let sel = ['sword', 'hammer'];
+  const cardEls = [[], []];
+
+  function buildSelect() {
+    [0, 1].forEach(side => {
+      const wrap = document.getElementById('cards' + (side + 1));
+      wrap.innerHTML = '';
+      cardEls[side] = CHARS.map(c => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.setProperty('--cc', c.color);
+        card.innerHTML = '<div class="cemoji">' + c.emoji + '</div>' +
+                         '<div class="cname">' + c.name + '</div>' +
+                         '<div class="ctag">' + c.ctag + '</div>' +
+                         '<div class="crec">' + recText(c.id) + '</div>';
+        card.addEventListener('click', () => {
+          sel[side] = c.id;
+          refreshSelect();
+        });
+        wrap.appendChild(card);
+        return { el: card, id: c.id };
+      });
+    });
+    refreshSelect();
+  }
+
+  function refreshSelect() {
+    [0, 1].forEach(side => {
+      for (const c of cardEls[side]) {
+        c.el.classList.toggle('sel', sel[side] === c.id);
+        c.el.querySelector('.crec').textContent = recText(c.id);
+      }
+    });
+  }
+
+  function showMenu() {
+    overlayTitle.textContent = 'BATTLE BALL ARENA';
+    overlayTitle.style.color = '#fff';
+    overlaySub.textContent = 'Choose your fighters — weapons spin, contact deals damage.';
+    selectBox.classList.remove('hidden');
+    refreshSelect();
+    playBtn.textContent = 'FIGHT!';
+    changeBtn.classList.add('hidden');
     overlay.classList.remove('hidden');
   }
 
-  playBtn.addEventListener('click', () => {
+  function startFight() {
     initAudio();
-    reset();
+    music.start();
+    setupFight(sel[0], sel[1]);
     overlay.classList.add('hidden');
     running = true;
     lastTime = performance.now();
-  });
+    const c1 = charById(sel[0]), c2 = charById(sel[1]);
+    say(c1.speakName + ' versus ' + c2.speakName + '. Fight!');
+    announce = { text: 'FIGHT!', color: '#ffd75e', t: 1.2, max: 1.2 };
+  }
+
+  function endFight(loser) {
+    running = false;
+    recordOf(winner.id).w++;
+    recordOf(loser.id).l++;
+    saveRecords();
+    for (const b of balls) b.recEl.textContent = recText(b.id);
+    say(winner.speakName + ' wins!');
+    overlayTitle.textContent = winner.name + ' WINS!';
+    overlayTitle.style.color = winner.color;
+    overlaySub.textContent = loser.name + ' was knocked out at 0 HP. Career: ' +
+      winner.name.replace(' II', '') + ' ' + recText(winner.id) + ' • ' +
+      loser.name.replace(' II', '') + ' ' + recText(loser.id);
+    selectBox.classList.add('hidden');
+    playBtn.textContent = 'REMATCH';
+    changeBtn.classList.remove('hidden');
+    overlay.classList.remove('hidden');
+  }
+
+  playBtn.addEventListener('click', startFight);
+  changeBtn.addEventListener('click', showMenu);
 
   // -------------------------------------------------------------------- loop
 
@@ -1018,8 +1524,17 @@
     requestAnimationFrame(frame);
   }
 
-  reset();
+  buildSelect();
+  showMenu();
   requestAnimationFrame(frame);
+
+  // tiny hook for automated headless testing — not used by gameplay
+  window.__bba = {
+    get balls() { return balls; },
+    get running() { return running; },
+    select: (a, b2) => { sel = [a, b2]; },
+    castSpecial, startFight,
+  };
 })();
 </script>
 </body>
