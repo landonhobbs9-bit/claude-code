@@ -166,6 +166,10 @@
   const HIT_COOLDOWN = 0.45;   // seconds of invulnerability after taking a weapon hit
   const WALL_BOUNCE = 0.98;    // energy kept on wall bounce
   const SPEED_DAMP = 0.6;      // how fast knockback speed decays back to cruise speed
+  const WALL_SPEEDUP = 9;      // cruise speed gained on each wall bounce
+  const MAX_CRUISE = 520;      // speed cap so the fight stays watchable
+  const BALL_SLOWDOWN = 35;    // cruise speed lost when the balls slam into each other
+  const MIN_CRUISE = 110;      // speed floor so they never stall out
 
   let balls, particles, shake, running, winner, lastTime;
 
@@ -230,11 +234,13 @@
       b.x += b.vx * dt;
       b.y += b.vy * dt;
 
-      // bounce off walls
-      if (b.x - b.r < 0)  { b.x = b.r;     b.vx =  Math.abs(b.vx) * WALL_BOUNCE; }
-      if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx) * WALL_BOUNCE; }
-      if (b.y - b.r < 0)  { b.y = b.r;     b.vy =  Math.abs(b.vy) * WALL_BOUNCE; }
-      if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; }
+      // bounce off walls — each bounce makes the ball cruise a bit faster
+      let hitWall = false;
+      if (b.x - b.r < 0)  { b.x = b.r;     b.vx =  Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
+      if (b.x + b.r > W)  { b.x = W - b.r; b.vx = -Math.abs(b.vx) * WALL_BOUNCE; hitWall = true; }
+      if (b.y - b.r < 0)  { b.y = b.r;     b.vy =  Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
+      if (b.y + b.r > H)  { b.y = H - b.r; b.vy = -Math.abs(b.vy) * WALL_BOUNCE; hitWall = true; }
+      if (hitWall) b.cruise = Math.min(MAX_CRUISE, b.cruise + WALL_SPEEDUP);
 
       // ease speed back toward cruise speed after knockbacks
       const sp = Math.hypot(b.vx, b.vy) || 1;
@@ -293,6 +299,10 @@
     if (va - vb <= 0) return; // already separating
     a.vx += (vb - va) * nx; a.vy += (vb - va) * ny;
     b.vx += (va - vb) * nx; b.vy += (va - vb) * ny;
+
+    // slamming into each other bleeds off speed
+    a.cruise = Math.max(MIN_CRUISE, a.cruise - BALL_SLOWDOWN);
+    b.cruise = Math.max(MIN_CRUISE, b.cruise - BALL_SLOWDOWN);
 
     spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, '#cfd6ff', 5, 120);
   }
