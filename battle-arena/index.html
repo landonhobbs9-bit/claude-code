@@ -120,19 +120,25 @@
     position: fixed; /* full-screen menu so it never spills over the HUD */
     inset: 0;
     z-index: 50;
+    background: rgba(10, 12, 22, 0.94);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #overlay.hidden { display: none; }
+  /* inner wrapper grows with its content, so tall menus scroll instead of
+     clipping (centered flex containers clip their overflow) */
+  #menu {
+    min-height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(10, 12, 22, 0.94);
     gap: 14px;
     padding: 18px 10px;
-    overflow-y: auto;
   }
-  #overlay.hidden { display: none; }
-  /* auto margins center when content fits, but allow scrolling when it doesn't */
-  #overlay .title { margin-top: auto; text-align: center; }
-  #overlay .btn-row { margin-bottom: auto; }
+  #overlay .title { text-align: center; }
+  /* the FIGHT button stays reachable even mid-scroll */
+  #overlay .btn-row { position: sticky; bottom: 10px; }
   #overlay .title {
     font-size: clamp(24px, 7vw, 36px);
     font-weight: bold;
@@ -167,7 +173,14 @@
   }
   .card:hover { transform: scale(1.05); }
   .card.sel { border-color: var(--cc); box-shadow: 0 0 12px var(--cc); }
-  .card .cemoji { font-size: 26px; }
+  .card .cport {
+    width: 78px;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid #3a3f5c;
+    display: block;
+    margin: 0 auto;
+  }
   .card .cname { font-size: 12px; font-weight: bold; color: var(--cc); margin: 2px 0; }
   .card .ctag { font-size: 9px; color: #9aa0b5; }
   .card .crec { font-size: 10px; color: #ffd75e; margin-top: 3px; }
@@ -255,16 +268,18 @@
 <div id="arena-wrap">
   <canvas id="arena" width="860" height="540"></canvas>
   <div id="overlay">
-    <div class="title" id="overlay-title">BATTLE BALL ARENA</div>
-    <div class="sub" id="overlay-sub">Choose your fighters &mdash; weapons spin, contact deals damage.</div>
-    <div id="select">
-      <div class="sel-col"><h3>FIGHTER 1</h3><div class="cards" id="cards1"></div></div>
-      <div class="sel-vs">VS</div>
-      <div class="sel-col"><h3>FIGHTER 2</h3><div class="cards" id="cards2"></div></div>
-    </div>
-    <div class="btn-row">
-      <button id="play-btn">FIGHT!</button>
-      <button id="change-btn" class="alt hidden">CHANGE FIGHTERS</button>
+    <div id="menu">
+      <div class="title" id="overlay-title">BATTLE BALL ARENA</div>
+      <div class="sub" id="overlay-sub">Choose your fighters &mdash; weapons spin, contact deals damage.</div>
+      <div id="select">
+        <div class="sel-col"><h3>FIGHTER 1</h3><div class="cards" id="cards1"></div></div>
+        <div class="sel-vs">VS</div>
+        <div class="sel-col"><h3>FIGHTER 2</h3><div class="cards" id="cards2"></div></div>
+      </div>
+      <div class="btn-row">
+        <button id="play-btn">FIGHT!</button>
+        <button id="change-btn" class="alt hidden">CHANGE FIGHTERS</button>
+      </div>
     </div>
   </div>
 </div>
@@ -277,7 +292,7 @@
 <script>
 (() => {
   const canvas = document.getElementById('arena');
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d'); // `let`: portraits temporarily retarget it
   const W = canvas.width, H = canvas.height;
 
   const overlay = document.getElementById('overlay');
@@ -1611,6 +1626,54 @@
 
   // -------------------------------------------------------- character select
 
+  // portraits are rendered once from the real in-game art onto a mini canvas
+  function portraitOf(c) {
+    if (c.portrait !== undefined) return c.portrait;
+    const pc = document.createElement('canvas');
+    pc.width = 110; pc.height = 84;
+    const old = ctx;
+    ctx = pc.getContext('2d');
+
+    const bg = ctx.createLinearGradient(0, 0, 0, 84);
+    bg.addColorStop(0, '#262c4a');
+    bg.addColorStop(1, '#13162a');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 110, 84);
+
+    const fake = { r: 21, wLen: c.wLen * (c.weapon === 'spear' ? 0.45 : 0.5),
+                   weapon: c.weapon, grabCd: 0, color: c.color, dark: c.dark };
+    ctx.save();
+    ctx.translate(52, 50);
+    ctx.rotate(-0.75); // weapon raised heroically over the shoulder
+    drawWeapon(fake);
+    ctx.restore();
+
+    const grad = ctx.createRadialGradient(46, 44, 4, 52, 50, 21);
+    grad.addColorStop(0, c.color);
+    grad.addColorStop(1, c.dark);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(52, 50, 21, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // determined eyes, staring down the opposition
+    for (const side of [-1, 1]) {
+      const ex = 52 + Math.cos(-0.2 + side * 0.45) * 9.5;
+      const ey = 50 + Math.sin(-0.2 + side * 0.45) * 9.5;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ex, ey, 4.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#1a1e30';
+      ctx.beginPath(); ctx.arc(ex + 1.7, ey - 0.4, 2.1, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx = old;
+    c.portrait = pc.toDataURL ? pc.toDataURL() : '';
+    return c.portrait;
+  }
+
   let sel = ['sword', 'hammer'];
   const cardEls = [[], []];
 
@@ -1622,7 +1685,7 @@
         const card = document.createElement('div');
         card.className = 'card';
         card.style.setProperty('--cc', c.color);
-        card.innerHTML = '<div class="cemoji">' + c.emoji + '</div>' +
+        card.innerHTML = '<img class="cport" src="' + portraitOf(c) + '" alt="' + c.name + '">' +
                          '<div class="cname">' + c.name + '</div>' +
                          '<div class="ctag">' + c.ctag + '</div>' +
                          '<div class="crec">' + recText(c.id) + '</div>';
