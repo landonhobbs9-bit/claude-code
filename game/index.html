@@ -21,7 +21,8 @@
   #wrap { position:absolute; inset:0; }
 
   /* HUD */
-  #hud { position:absolute; top:0; left:0; right:0; padding:8px 10px;
+  #hud { position:absolute; top:0; left:0; right:0;
+    padding:calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 8px calc(10px + env(safe-area-inset-left));
     display:flex; flex-direction:column; gap:5px; pointer-events:none; z-index:10;
     font-size:12px; text-shadow:1px 1px 0 #000; }
   .bar { height:14px; border:2px solid #000; background:#1a1410; position:relative;
@@ -42,7 +43,7 @@
 
   /* Touch controls */
   #touch { position:absolute; inset:0; z-index:20; pointer-events:none; }
-  #joy { position:absolute; left:18px; bottom:26px; width:130px; height:130px;
+  #joy { position:absolute; left:calc(18px + env(safe-area-inset-left)); bottom:calc(26px + env(safe-area-inset-bottom)); width:130px; height:130px;
     border-radius:50%; border:3px solid rgba(180,160,120,.35);
     background:radial-gradient(rgba(40,36,30,.45),rgba(10,8,6,.3));
     pointer-events:auto; touch-action:none; }
@@ -55,11 +56,11 @@
     font-weight:bold; color:#1a140a; text-shadow:0 1px 0 rgba(255,255,255,.2);
     border:3px solid #0a0806; box-shadow:0 0 10px rgba(0,0,0,.5); user-select:none; }
   .btn:active { filter:brightness(1.35); transform:scale(.94); }
-  #atk { right:22px; bottom:34px; width:96px; height:96px;
+  #atk { right:calc(22px + env(safe-area-inset-right)); bottom:calc(34px + env(safe-area-inset-bottom)); width:96px; height:96px;
     background:radial-gradient(#d86030,#8a2810); font-size:14px; }
-  #pot { right:120px; bottom:118px; width:62px; height:62px;
+  #pot { right:calc(120px + env(safe-area-inset-right)); bottom:calc(118px + env(safe-area-inset-bottom)); width:62px; height:62px;
     background:radial-gradient(#d83030,#7a1414); color:#fff; }
-  #dash { right:34px; bottom:140px; width:62px; height:62px;
+  #dash { right:calc(34px + env(safe-area-inset-right)); bottom:calc(140px + env(safe-area-inset-bottom)); width:62px; height:62px;
     background:radial-gradient(#5aa0e0,#1a4f9a); color:#fff; }
 
   /* Overlays */
@@ -224,6 +225,17 @@ addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
 const input = { mx:0, my:0, attack:false, dash:false }; // mx,my = move vector
 
+// Kill iOS rubber-band scrolling, pinch-zoom and double-tap-zoom so the
+// game feels like a native app and gestures don't fight the controls.
+document.addEventListener('touchmove', e=>{ e.preventDefault(); }, {passive:false});
+document.addEventListener('gesturestart', e=> e.preventDefault());
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e=>{
+  const t = Date.now();
+  if (t - lastTouchEnd < 300) e.preventDefault(); // double-tap zoom
+  lastTouchEnd = t;
+}, {passive:false});
+
 // Mouse / click to attack on desktop
 canvas.addEventListener('mousedown', () => { if (game.state==='play') input.attack = true; });
 
@@ -264,13 +276,34 @@ joy.addEventListener('touchmove',  e=>{ e.preventDefault(); joyMove(e); }, {pass
 joy.addEventListener('touchend',   e=>{ e.preventDefault(); joyEnd(e); }, {passive:false});
 joy.addEventListener('touchcancel',e=>{ e.preventDefault(); joyEnd(e); }, {passive:false});
 
+// Tap button: fire once on press. Uses both touch + pointer so it works
+// across iOS Safari, Android Chrome and desktop-emulated touch.
 function bindBtn(id, fn){
   const el = document.getElementById(id);
-  el.addEventListener('touchstart', e=>{ e.preventDefault(); fn(); }, {passive:false});
+  let lock = false;
+  const press = e=>{ e.preventDefault(); if(lock) return; lock=true; fn(); };
+  const release = ()=>{ lock=false; };
+  el.addEventListener('touchstart', press, {passive:false});
+  el.addEventListener('touchend', release, {passive:false});
+  el.addEventListener('touchcancel', release, {passive:false});
+  el.addEventListener('pointerdown', press);
+  el.addEventListener('pointerup', release);
 }
-bindBtn('atk',  ()=> input.attack = true);
+// Hold button: stays "held" while a finger is down (for auto-attack).
+function bindHold(id, onState){
+  const el = document.getElementById(id);
+  const set = (v)=> (e)=>{ if(e) e.preventDefault(); onState(v); };
+  el.addEventListener('touchstart', set(true), {passive:false});
+  el.addEventListener('touchend',   set(false), {passive:false});
+  el.addEventListener('touchcancel',set(false), {passive:false});
+  el.addEventListener('pointerdown', set(true));
+  el.addEventListener('pointerup',   set(false));
+  el.addEventListener('pointerleave',set(false));
+}
+bindHold('atk', v=>{ atkHeld = v; if(v) input.attack = true; });
 bindBtn('dash', ()=> input.dash = true);
 bindBtn('pot',  ()=> usePotion());
+let atkHeld = false;
 
 // ---- World / Dungeon generation ---------------------------------------
 // Simple room-and-corridor generator on a tile grid. 0=wall, 1=floor.
@@ -417,8 +450,20 @@ function playerAttack(){
   player.atkCd = player.atkCdMax;
   player.swing = 1;
   game.shake = Math.max(game.shake, 3);
-  const dx = player.dir.x, dy = player.dir.y;
-  const baseAng = Math.atan2(dy, dx);
+  // Auto-aim: swing toward the nearest enemy in reach so taps land on mobile
+  // (hard to aim a melee arc with a thumbstick). Falls back to facing dir.
+  let baseAng = Math.atan2(player.dir.y, player.dir.x);
+  let nearest = null, nd = player.atkRange + 26;
+  for (const e of enemies){
+    if (e.dead) continue;
+    const d = dist(player.x, player.y, e.x, e.y) - e.r;
+    if (d < nd){ nd = d; nearest = e; }
+  }
+  if (nearest){
+    baseAng = Math.atan2(nearest.y-player.y, nearest.x-player.x);
+    player.dir.x = Math.cos(baseAng); player.dir.y = Math.sin(baseAng);
+    player.facing = nearest.x < player.x ? -1 : 1;
+  }
   slashes.push({ x:player.x, y:player.y, ang:baseAng, t:0, range:player.atkRange });
   // hit all enemies within arc
   for (const e of enemies){
@@ -577,7 +622,8 @@ function update(dt){
   player.atkCd = Math.max(0, player.atkCd - dt);
   player.swing = Math.max(0, player.swing - dt*4);
 
-  // attack
+  // attack — holding the ATK button auto-swings as the cooldown allows
+  if (atkHeld) input.attack = true;
   if (input.attack){ playerAttack(); }
   input.attack = false;
 
@@ -995,10 +1041,22 @@ function drawMinimap(){
   ctx.globalAlpha = 1;
 }
 
-function drawVignette(){
-  const g = ctx.createRadialGradient(VIEW_W/2,VIEW_H/2, VIEW_H*0.35, VIEW_W/2,VIEW_H/2, VIEW_H*0.75);
+// vignette is static for a given resolution — bake it once into a canvas
+let vignetteCanvas = null, vignetteKey = '';
+function buildVignette(){
+  const key = VIEW_W+'x'+VIEW_H;
+  if (key === vignetteKey && vignetteCanvas) return;
+  vignetteKey = key;
+  vignetteCanvas = document.createElement('canvas');
+  vignetteCanvas.width = VIEW_W; vignetteCanvas.height = VIEW_H;
+  const c = vignetteCanvas.getContext('2d');
+  const g = c.createRadialGradient(VIEW_W/2,VIEW_H/2, VIEW_H*0.35, VIEW_W/2,VIEW_H/2, VIEW_H*0.75);
   g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.55)');
-  ctx.fillStyle=g; ctx.fillRect(0,0,VIEW_W,VIEW_H);
+  c.fillStyle=g; c.fillRect(0,0,VIEW_W,VIEW_H);
+}
+function drawVignette(){
+  buildVignette();
+  ctx.drawImage(vignetteCanvas, 0, 0);
 }
 
 // ---- HUD updates -------------------------------------------------------
